@@ -654,7 +654,7 @@ SELECT
     am.assessment_id,
     am.assessment_sequence,
     am.assessment_desc AS assessment_title,
-	am.assessment_type,  
+    am.assessment_type,  
     sse.time_limit,
     am.marks,
     am.valid_to AS deadline,
@@ -665,12 +665,22 @@ SELECT
     dbp.name AS business_partner_name,
     dsbp.name AS sub_business_partner_name,
     dsg.name AS service_group_name,
-    ds.service_name AS service_name
+    ds.service_name AS service_name,
+
+    COALESCE(
+        array_agg(DISTINCT tm.tag)
+        FILTER (WHERE tm.tag IS NOT NULL),
+        '{}'
+    ) AS tags
+
 FROM assessment_mst am
+
 JOIN dhl_survey_survey_ext sse 
     ON am.assessment_sequence = sse.assessment_sequence
+
 LEFT JOIN job_descriptions jd              
     ON am.job_id = jd.job_id               
+
 LEFT JOIN dhl_center dc
     ON dc.center_id = sse.center_id
 LEFT JOIN dhl_service_line dsl
@@ -683,6 +693,34 @@ LEFT JOIN dhl_service_group dsg
     ON dsg.service_grp_id = sse.service_group_id
 LEFT JOIN dhl_service ds
     ON ds.service_id = sse.service_id
+
+-- 🔥 CORRECT TAG JOIN
+LEFT JOIN assessment_tag_mapping atm
+    ON atm.assessment_sequence = am.assessment_sequence
+    AND atm.is_deleted = false
+
+LEFT JOIN tag_mst tm
+    ON tm.tag_id = atm.tag_id
+    AND tm.is_deleted = false
+    AND tm.is_active = true
+
+GROUP BY 
+    am.assessment_id,
+    am.assessment_sequence,
+    am.assessment_desc,
+    am.assessment_type,
+    sse.time_limit,
+    am.marks,
+    am.valid_to,
+    sse.state,
+    jd.title,
+    dc.center_name,
+    dsl.name,
+    dbp.name,
+    dsbp.name,
+    dsg.name,
+    ds.service_name
+
 ORDER BY am.created_on DESC
 LIMIT ? OFFSET ?
 `
@@ -693,7 +731,6 @@ LIMIT ? OFFSET ?
 
 	return assessments, totalRecords, nil
 }
-
 
 func (r *AssessmentRepositoryImpl) GetAssessmentsAttendeeInfo(assessmentID string, limit, offset int) ([]*models.AssessmentAttendeesInfo, int64, error) {
 
@@ -1892,4 +1929,3 @@ func (r *AssessmentRepositoryImpl) CreateQuestionTagMappingWithParents(tx *gorm.
 
 	return nil
 }
-

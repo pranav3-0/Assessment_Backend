@@ -72,4 +72,3 @@ const (
 	Open   AssessmentState = "open"
 	Closed AssessmentState = "closed"
 )
-

@@ -8,20 +8,23 @@ import (
 )
 
 type AssessmentUser struct {
-	UserID     uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey;column:user_id" json:"user_id"`
-	FirstName  string     `gorm:"type:varchar(255);column:first_name" json:"first_name"`
-	LastName   string     `gorm:"type:varchar(255);column:last_name" json:"last_name"`
-	Email      string     `gorm:"type:varchar(255);column:email" json:"email"`
-	Phone      string     `gorm:"type:varchar(255);column:phone" json:"phone"`
-	Username   string     `gorm:"type:varchar(255);not null;column:username" json:"username"`
-	AuthUserID string     `gorm:"type:varchar(255);column:auth_user_id" json:"auth_user_id"`
-	Password   string     `gorm:"type:varchar(255);column:password" json:"-"`
-	IsActive   bool       `gorm:"default:true;column:is_active" json:"is_active"`
-	NotifyId   string     `gorm:"column:notify_id;type:varchar" json:"notify_id"`
-	CreatedAt  time.Time  `gorm:"type:timestamptz;default:now();column:created_at" json:"created_at"`
-	CreatedBy  *uuid.UUID `gorm:"type:uuid;column:created_by" json:"created_by"`
-	UpdatedAt  time.Time  `gorm:"type:timestamptz;default:now();column:updated_at" json:"updated_at"`
-	UpdatedBy  *uuid.UUID `gorm:"type:uuid;column:updated_by" json:"updated_by"`
+	UserID     uuid.UUID `gorm:"type:uuid;default:gen_random_uuid();primaryKey;column:user_id" json:"user_id"`
+	FirstName  string    `gorm:"type:varchar(255);column:first_name" json:"first_name"`
+	LastName   string    `gorm:"type:varchar(255);column:last_name" json:"last_name"`
+	Email      string    `gorm:"type:varchar(255);column:email" json:"email"`
+	Phone      string    `gorm:"type:varchar(255);column:phone" json:"phone"`
+	Username   string    `gorm:"type:varchar(255);not null;column:username" json:"username"`
+	AuthUserID string    `gorm:"type:varchar(255);column:auth_user_id" json:"auth_user_id"`
+	Password   string    `gorm:"type:varchar(255);column:password" json:"-"`
+	IsActive   bool      `gorm:"default:true;column:is_active" json:"is_active"`
+	NotifyId   string    `gorm:"column:notify_id;type:varchar" json:"notify_id"`
+
+	UserType string `gorm:"type:varchar(20);column:user_type" json:"user_type"` // THIS
+
+	CreatedAt time.Time  `gorm:"type:timestamptz;default:now();column:created_at" json:"created_at"`
+	CreatedBy *uuid.UUID `gorm:"type:uuid;column:created_by" json:"created_by"`
+	UpdatedAt time.Time  `gorm:"type:timestamptz;default:now();column:updated_at" json:"updated_at"`
+	UpdatedBy *uuid.UUID `gorm:"type:uuid;column:updated_by" json:"updated_by"`
 }
 
 func (AssessmentUser) TableName() string {
@@ -66,6 +69,7 @@ type RegisterRequest struct {
 	Email      string   `json:"email" binding:"required,email"`
 	Phone      string   `json:"phone" binding:"required"`
 	Roles      []string `json:"roles" binding:"required"`
+	UserType   string   `json:"user_type"`
 	Password   string   `json:"password"  binding:"required"`
 }
 
@@ -90,6 +94,7 @@ type UserWithRoles struct {
 	Username   string         `json:"username"`
 	AuthUserID string         `json:"auth_user_id"`
 	Roles      pq.StringArray `json:"roles" gorm:"type:text[]"`
+	UserType   string         `json:"user_type"` //  THIS
 }
 
 type UserProfileUpdate struct {
@@ -136,4 +141,5 @@ type UserFullData struct {
 	Center        *int     `json:"center"`
 	SelectionType *string  `json:"selection_type"`
 	Roles         []string `json:"roles"`
+	UserType      string   `json:"user_type"`
 }

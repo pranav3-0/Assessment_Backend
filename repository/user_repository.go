@@ -87,16 +87,19 @@ func (r *UserRepositoryImpl) FindByUsername(username string) (models.UserWithRol
 	var user models.UserWithRoles
 
 	query := `
-		SELECT 
-			u.user_id,
-			u.first_name,
-			u.last_name,
-			u.email,
-			u.phone,
-			u.username,
-			u.auth_user_id,
-			COALESCE(ARRAY_AGG(r.role_label ORDER BY r.role_label)
-				FILTER (WHERE r.role_label IS NOT NULL), '{}') AS roles
+SELECT 
+	u.user_id,
+	u.first_name,
+	u.last_name,
+	u.email,
+	u.phone,
+	u.username,
+	u.auth_user_id,
+	u.user_type,
+	COALESCE(ARRAY_AGG(r.role_label ORDER BY r.role_label)
+		FILTER (WHERE r.role_label IS NOT NULL), '{}') AS roles
+
+
 		FROM assessment_user_mst u
 		LEFT JOIN assessment_user_role_mapping m 
 			ON u.user_id = m.user_id
@@ -104,8 +107,9 @@ func (r *UserRepositoryImpl) FindByUsername(username string) (models.UserWithRol
 			ON m.role_id = r.role_id
 		WHERE LOWER(u.username) = LOWER(?)
 		GROUP BY 
-			u.user_id, u.first_name, u.last_name, u.email, u.phone, 
-			u.username, u.auth_user_id;
+	u.user_id, u.first_name, u.last_name, u.email, u.phone, 
+	u.username, u.auth_user_id, u.user_type;
+
 	`
 
 	err := r.db.Raw(query, username).Scan(&user).Error
@@ -373,7 +377,8 @@ func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, ro
 	}
 
 	// Step 2: Main query — with role condition if provided
-	query := `SELECT u.user_id, u.first_name, u.last_name, u.email, u.phone, u.username, ext.company_id,
+	query := `SELECT u.user_id, u.first_name, u.last_name, u.email, u.phone, u.username,u.user_type, ext.company_id,
+	
 		ext.karma, ext.rank_id, ext.team_lead, ext.manager, ext.senior_manager, ext.sdl, ext.sll, ext.user_map, ext.emp_code,
 		ext.center, ext.selection_type,	COALESCE(string_agg(DISTINCT r.role_label, ','), '') AS roles
 	FROM 
@@ -396,7 +401,7 @@ func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, ro
 	// Group by user fields
 	query += `
 	GROUP BY 
-		u.user_id, ext.company_id, ext.karma, ext.rank_id, ext.team_lead, ext.manager,
+		u.user_id, u.user_type, ext.company_id, ext.karma, ext.rank_id, ext.team_lead, ext.manager,
 		ext.senior_manager, ext.sdl, ext.sll, ext.user_map, ext.emp_code,
 		ext.center, ext.selection_type
 	ORDER BY u.created_at DESC
@@ -438,6 +443,7 @@ func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, ro
 		Center        *int    `json:"center"`
 		SelectionType *string `json:"selection_type"`
 		Roles         string  `json:"roles"`
+		UserType      string  `json:"user_type"`
 	}
 
 	var rows []userRow
@@ -468,6 +474,7 @@ func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, ro
 			EmpCode:       row.EmpCode,
 			Center:        row.Center,
 			SelectionType: row.SelectionType,
+			UserType:      row.UserType,
 		}
 
 		if row.Roles != "" {

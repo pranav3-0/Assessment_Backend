@@ -2,6 +2,7 @@ package models
 
 import (
 	"time"
+	"github.com/lib/pq"
 )
 
 type GetAssessmentRequest struct {
@@ -94,7 +95,7 @@ type AssessmentListResponse struct {
 	TypingResult        *AssessmentTypingResult `json:"typing_result" gorm:"-"`
 	SessionImage        []byte                  `json:"session_image,omitempty" gorm:"-"`
 	JobTitle            *string                 `json:"job_title"`
-	Tags                []string                `json:"tags" gorm:"-"`
+	Tags pq.StringArray `json:"tags" gorm:"column:tags;type:text[]"`
 }
 
 type AssessmentAttendeesInfo struct {

@@ -44,6 +44,7 @@ func (s *AuthServiceImpl) RegisterUser(ctx context.Context, req models.RegisterR
 		Email:     req.Email,
 		Phone:     req.Phone,
 		Username:  req.Email,
+		UserType:  req.UserType,
 		Password:  string(hashedPassword),
 		IsActive:  true,
 	}
@@ -102,7 +103,17 @@ func (s *AuthServiceImpl) LoginUser(ctx context.Context, req models.LoginRequest
 	default:
 		return nil, errors.New("unsupported authentication type")
 	}
-	response.User = &user
+	response.User = &models.UserWithRoles{
+	UserID:     user.UserID,
+	FirstName:  user.FirstName,
+	LastName:   user.LastName,
+	Email:      user.Email,
+	Phone:      user.Phone,
+	Username:   user.Username,
+	AuthUserID: user.AuthUserID,
+	Roles:      user.Roles,
+	UserType:   user.UserType,   
+}
 
 	return &response, nil
 
