@@ -49,6 +49,9 @@ const (
 	SessionImage                = "/session-image"
 	JobDescription              = "/job-description"
 	JobDescriptions             = "/job-descriptions"
+	AssessmentVerificationPhoto = "/verification/photo"
+	AssessmentVerificationVoice = "/verification/voice"
+	AssessmentStart             = "/start"
 )
 
 type UserRole string

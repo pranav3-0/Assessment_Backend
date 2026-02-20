@@ -74,6 +74,10 @@ type AssessmentRepository interface {
 	GetTagsByQuestionID(questionID int64) ([]string, error)
 	GetTagsByQuestionIDs(questionIDs []int64) (map[int64][]string, error)
 	GetTagRequestsByQuestionIDs(questionIDs []int64) (map[int64][]models.TagRequest, error)
+
+	SavePhoto(assessmentSeq string, userID string, sessionID string, photoData []byte) error
+
+	SaveVoice(assessmentSeq string, userID string, sessionID string, voiceData []byte) error
 }
 
 type AssessmentRepositoryImpl struct {
@@ -1928,4 +1932,52 @@ func (r *AssessmentRepositoryImpl) CreateQuestionTagMappingWithParents(tx *gorm.
 	}
 
 	return nil
+}
+
+func (r *AssessmentRepositoryImpl) SavePhoto(
+	assessmentSeq string,
+	userID string,
+	sessionID string,
+	photoData []byte,
+) error {
+
+	query := `
+    INSERT INTO assessment_verification
+    (assessment_sequence, user_id, session_id, photo)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT (assessment_sequence, user_id, session_id)
+    DO UPDATE SET 
+        photo = EXCLUDED.photo,
+        updated_on = CURRENT_TIMESTAMP
+    `
+
+	return r.db.Exec(query,
+		assessmentSeq,
+		userID,
+		sessionID,
+		photoData,
+	).Error
+}
+
+func (r *AssessmentRepositoryImpl) SaveVoice(
+	assessmentSeq string,
+	userID string,
+	sessionID string,
+	voiceData []byte,
+) error {
+
+	query := `
+    UPDATE assessment_verification
+    SET voice = ?, updated_on = CURRENT_TIMESTAMP
+    WHERE assessment_sequence = ?
+    AND user_id = ?
+    AND session_id = ?
+    `
+
+	return r.db.Exec(query,
+		voiceData,
+		assessmentSeq,
+		userID,
+		sessionID,
+	).Error
 }

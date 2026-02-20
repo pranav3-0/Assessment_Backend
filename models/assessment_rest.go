@@ -6,9 +6,11 @@ import (
 )
 
 type GetAssessmentRequest struct {
-	AssessmentId string `json:"assessment_sequence"`
-	UserId       string `json:"userId"`
+    AssessmentId string `json:"assessment_sequence"`
+    SessionID    string `json:"session_id"`
+    UserId       string `json:"-"`
 }
+
 type DuplicateAssessmentRequest struct {
 	AssessmentSequence string `json:"assessment_sequence"`
 }
@@ -160,6 +162,7 @@ type UpdateAssessmentRequest struct {
 	AssessmentDetails  AssessmentUpdate `json:"assessment_details"`
 	Questions          []QuestionDTO    `json:"questions"`
 	DeletedQuestionIDs []int64          `json:"deleted_question_ids"`
+	Tags               []TagRequest     `json:"tags,omitempty"` 
 }
 
 type AssessmentUpdate struct {
@@ -179,6 +182,7 @@ type AssessmentUpdate struct {
 	Instruction          *string    `json:"instruction"`
 	AllowShowResult      *bool      `json:"allow_show_result"`
 	AllowViewCertificate *bool      `json:"allow_view_certificat"`
+	JobID                *int64     `json:"job_id"`
 }
 
 type QuestionDTO struct {
@@ -271,4 +275,13 @@ type GenerateAssessmentResponse struct {
 
 type SaveGeneratedAssessmentRequest struct {
 	Assessment SheetAssessment `json:"assessment" binding:"required"`
+}
+
+type StartAssessmentRequest struct {
+	AssessmentSequence string `json:"assessment_sequence" binding:"required"`
+}
+
+type StartAssessmentResponse struct {
+	SessionID          string `json:"session_id"`
+	AssessmentSequence string `json:"assessment_sequence"`
 }

@@ -5,6 +5,7 @@ import (
 	"dhl/models"
 	"dhl/services"
 	"dhl/utils"
+	"io"
 	"log"
 	"net/http"
 
@@ -370,3 +371,116 @@ func (ac *AssessmentController) SaveGeneratedAssessment(ctx *gin.Context) {
 
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Assessment saved successfully", response, nil, nil)
 }
+
+func (ac *AssessmentController) UploadPhoto(ctx *gin.Context) {
+
+	assessmentSeq := ctx.PostForm("assessment_sequence")
+	sessionID := ctx.PostForm("session_id")
+
+	_, userID, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 401, "Unauthorized", nil, err)
+		return
+	}
+
+	file, err := ctx.FormFile("photo")
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 400, "Photo file required", nil, err)
+		return
+	}
+
+	if file.Size > 2*1024*1024 {
+		models.ErrorResponse(ctx, "failure", 400, "Photo size exceeds 2MB", nil, nil)
+		return
+	}
+
+	openedFile, _ := file.Open()
+	defer openedFile.Close()
+
+	photoData, _ := io.ReadAll(openedFile)
+
+	err = ac.assessmentService.UploadPhoto(
+		assessmentSeq,
+		userID,
+		sessionID,
+		photoData,
+	)
+
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 500, "Failed to upload photo", nil, err)
+		return
+	}
+
+	models.SuccessResponse(ctx, "success", 200, "Photo uploaded successfully", nil, nil, nil)
+}
+
+func (ac *AssessmentController) UploadVoice(ctx *gin.Context) {
+
+	assessmentSeq := ctx.PostForm("assessment_sequence")
+	sessionID := ctx.PostForm("session_id")
+
+	_, userID, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 401, "Unauthorized", nil, err)
+		return
+	}
+
+	file, err := ctx.FormFile("voice")
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 400, "Voice file required", nil, err)
+		return
+	}
+
+	if file.Size > 5*1024*1024 {
+		models.ErrorResponse(ctx, "failure", 400, "Voice size exceeds 5MB", nil, nil)
+		return
+	}
+
+	openedFile, _ := file.Open()
+	defer openedFile.Close()
+
+	voiceData, _ := io.ReadAll(openedFile)
+
+	err = ac.assessmentService.UploadVoice(
+		assessmentSeq,
+		userID,
+		sessionID,
+		voiceData,
+	)
+
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 500, "Failed to upload voice", nil, err)
+		return
+	}
+
+	models.SuccessResponse(ctx, "success", 200, "Voice uploaded successfully", nil, nil, nil)
+}
+
+func (ac *AssessmentController) StartAssessment(ctx *gin.Context) {
+
+	_, userId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
+		return
+	}
+
+	var req models.StartAssessmentRequest
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		models.ErrorResponse(ctx, "Invalid input", http.StatusBadRequest, err.Error(), nil, err)
+		return
+	}
+
+	sessionID, err := ac.assessmentService.StartAssessment(userId, req.AssessmentSequence)
+	if err != nil {
+		models.ErrorResponse(ctx, "Failed to start assessment", http.StatusInternalServerError, err.Error(), nil, err)
+		return
+	}
+
+	response := models.StartAssessmentResponse{
+		SessionID:          sessionID,
+		AssessmentSequence: req.AssessmentSequence,
+	}
+
+	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Assessment started", response, nil, nil)
+}
+

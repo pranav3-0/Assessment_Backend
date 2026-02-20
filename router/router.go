@@ -171,6 +171,12 @@ func getAssessmentRoutes(assessmentController *controller.AssessmentController) 
 		Route{"Assessment", http.MethodPost, constant.Assessments, assessmentController.GetUserAssessments},
 		Route{"Assessment", http.MethodPost, constant.Certificate, assessmentController.GetUserAssessmentCerficiate},
 		Route{"Assessment", http.MethodPost, constant.SessionImage, assessmentController.CreateSessionImage},
+		
+
+		Route{"Assessment", http.MethodPost, constant.AssessmentVerificationPhoto, assessmentController.UploadPhoto},
+		Route{"Assessment", http.MethodPost, constant.AssessmentVerificationVoice, assessmentController.UploadVoice},
+		Route{"Assessment", http.MethodPost, constant.AssessmentStart, assessmentController.StartAssessment},
+
 	}
 }
 

@@ -40,6 +40,11 @@ type AssessmentService interface {
 	// UPDATE
 	UpdateAssessmentService(models.UpdateAssessmentRequest) error
 	UpdateAssessmentStatusService(models.UpdateAssessmentStatusRequest) error
+
+	UploadPhoto(assessmentSeq string,userID string,sessionID string,photoData []byte,) error
+	UploadVoice(assessmentSeq string,userID string,sessionID string,voiceData []byte,) error
+	StartAssessment(userID, assessmentSequence string) (string, error)
+
 }
 
 type AssessmentServiceImpl struct {
@@ -148,14 +153,17 @@ func (s *AssessmentServiceImpl) GetAssessment(assessmentSeq string) (*models.Ass
 }
 
 func (s *AssessmentServiceImpl) GetUserAssessment(req models.GetAssessmentRequest) (*models.AssessmentResponse, error) {
+
 	if req.AssessmentId == "" || req.UserId == "" {
 		return nil, errors.New("invalid input: assessmentId and userId required")
 	}
-	assessment, err := s.assessmentRepo.GetAssessmentMstByAssmtSeq(req.AssessmentId)
-	if err != nil {
-		return nil, err
+
+	if req.SessionID == "" {
+		return nil, errors.New("session_id is required")
 	}
-	assessmentExt, err := s.assessmentRepo.GetDhlSurveyExtByAssmtSeq(req.AssessmentId)
+
+	// Fetch assessment
+	assessment, err := s.assessmentRepo.GetAssessmentMstByAssmtSeq(req.AssessmentId)
 	if err != nil {
 		return nil, err
 	}
@@ -163,18 +171,20 @@ func (s *AssessmentServiceImpl) GetUserAssessment(req models.GetAssessmentReques
 		return nil, errors.New("assessment not found")
 	}
 
-	tx := s.db.Begin()
-	session, err := s.assessmentRepo.GetOrCreateUserSession(tx, req.UserId, req.AssessmentId, assessment.AssessmentType, assessment.PartnerID)
+	assessmentExt, err := s.assessmentRepo.GetDhlSurveyExtByAssmtSeq(req.AssessmentId)
 	if err != nil {
-		tx.Rollback()
 		return nil, err
 	}
 
-	status, err := s.assessmentRepo.UpdateAssessmentStatus(tx, req.UserId, req.AssessmentId, "STARTED")
-	if err != nil {
-		tx.Rollback()
-		return nil, err
+	session, err := s.assessmentRepo.GetSessionByID(req.SessionID, req.UserId)
+	if err != nil || session == nil {
+		return nil, errors.New("invalid session")
 	}
+
+	if session.AssessmentID != req.AssessmentId {
+		return nil, errors.New("session does not match assessment")
+	}
+
 	attemptedTypingTest := false
 	typingRes, _ := s.assessmentRepo.GetAssessmentTypingResult(req.UserId, req.AssessmentId)
 	if typingRes != nil {
@@ -183,34 +193,35 @@ func (s *AssessmentServiceImpl) GetUserAssessment(req models.GetAssessmentReques
 
 	questions, err := s.assessmentRepo.GetAssessmentQuestions(req.AssessmentId)
 	if err != nil {
-		tx.Rollback()
 		return nil, err
 	}
 
-	// Collect question IDs for bulk tag fetching
 	questionIDs := make([]int64, len(questions))
 	for i, q := range questions {
 		questionIDs[i] = q.QuestionID
 	}
+
 	questionTagsMap, _ := s.assessmentRepo.GetTagRequestsByQuestionIDs(questionIDs)
 
 	var questionResponses []models.AssessmentQuestion
+
 	for _, q := range questions {
+
 		questionContent, err := s.assessmentRepo.GetContentByQuestionID(q.QuestionID)
 		if err != nil {
-			tx.Rollback()
 			return nil, err
 		}
 
 		options, err := s.assessmentRepo.GetOptionsByQuestionID(q.QuestionID)
 		if err != nil {
-			tx.Rollback()
 			return nil, err
 		}
 
 		var answers []models.Answer
+
 		for _, opt := range options {
 			optContents, _ := s.assessmentRepo.GetContentByID(opt.ContentID)
+
 			answers = append(answers, models.Answer{
 				AnswerID:    int(opt.OptionID),
 				Sequence:    &opt.SequenceID,
@@ -219,6 +230,7 @@ func (s *AssessmentServiceImpl) GetUserAssessment(req models.GetAssessmentReques
 		}
 
 		questionTags := questionTagsMap[q.QuestionID]
+
 		questionResponses = append(questionResponses, models.AssessmentQuestion{
 			QuestionID:      int(q.QuestionID),
 			Sequence:        int(q.SequenceID),
@@ -233,30 +245,13 @@ func (s *AssessmentServiceImpl) GetUserAssessment(req models.GetAssessmentReques
 		})
 	}
 
-	if err := tx.Commit().Error; err != nil {
-		return nil, err
-	}
-
-	// Fetch session image if exists
-	log.Printf("Fetching session image for session: %s", session.SessionID.String())
-	sessionImage, err := s.assessmentRepo.GetSessionImageBySessionID(session.SessionID.String())
-	if err != nil {
-		log.Printf("WARNING: Failed to fetch session image: %v", err)
-		// Continue without image - don't fail the entire request
-	}
-	if sessionImage != nil {
-		log.Printf("Session image found, size: %d bytes", len(sessionImage))
-	} else {
-		log.Println("No session image found, returning empty image data")
-	}
-
 	tags, _ := s.assessmentRepo.GetTagRequestsByAssessmentSequence(assessment.AssessmentSequence)
 
 	resp := &models.AssessmentResponse{
 		AssessmentID:          assessment.AssessmentID,
 		AssessmentSequence:    assessment.AssessmentSequence,
 		AssessmentName:        assessment.AssessmentDesc,
-		AssessmentUsersStatus: status.AssessmentStatus,
+		AssessmentUsersStatus: "STARTED",
 		AssessmentStatus:      assessmentExt.State,
 		QuestionsCount:        len(questionResponses),
 		AssessmentType:        assessment.AssessmentType,
@@ -264,19 +259,19 @@ func (s *AssessmentServiceImpl) GetUserAssessment(req models.GetAssessmentReques
 		Certificate:           assessmentExt.Certificate,
 		NoOfAttempts:          assessmentExt.AttemptsLimit,
 		Questions:             questionResponses,
-		SessionID:             session.SessionID.String(),
+		SessionID:             req.SessionID,
 		AssessmentReport:      false,
 		Instruction:           assessment.Instructions,
 		TimeLimit:             assessmentExt.TimeLimit,
 		Marks:                 assessment.Marks,
 		AttemptedTypingTest:   attemptedTypingTest,
 		IsTypingTest:          assessmentExt.IsTypingTest,
-		SessionImage:          sessionImage,
 		Tags:                  tags,
 	}
 
 	return resp, nil
 }
+
 
 func (s *AssessmentServiceImpl) GetUserAssessments(
 	userId string,
@@ -724,6 +719,11 @@ func (s *AssessmentServiceImpl) UpdateAssessmentService(request models.UpdateAss
 	if request.AssessmentDetails.AssessmentType != nil {
 		assessmentUpdates.AssessmentType = *request.AssessmentDetails.AssessmentType
 	}
+	if request.AssessmentDetails.JobID != nil {
+    assessmentUpdates.JobID = request.AssessmentDetails.JobID
+}
+
+
 
 	err = s.assessmentRepo.UpdateAssessment(tx, assessmentUpdates)
 	if err != nil {
@@ -781,6 +781,35 @@ func (s *AssessmentServiceImpl) UpdateAssessmentService(request models.UpdateAss
 		tx.Rollback()
 		return err
 	}
+if len(request.Tags) > 0 {
+
+	if err := tx.Where("assessment_sequence = ?", assment.AssessmentSequence).
+		Delete(&models.AssessmentTagMapping{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	for _, tagReq := range request.Tags {
+
+		tagIDs, err := s.assessmentRepo.ProcessTagRequest(tx, tagReq, "system")
+		if err != nil {
+			tx.Rollback()
+			return err
+		}
+
+		for _, tagID := range tagIDs {
+			if err := s.assessmentRepo.CreateAssessmentTagMappingWithParents(
+				tx,
+				assment.AssessmentSequence,
+				tagID,
+				"system",
+			); err != nil {
+				tx.Rollback()
+				return err
+			}
+		}
+	}
+}
 
 	for _, question := range request.Questions {
 		if question.QuestionID == 0 {
@@ -1061,4 +1090,75 @@ func (s *AssessmentServiceImpl) CreateSessionImage(userID, sessionID string, ima
 
 	log.Printf("SUCCESS: Returning response with ID: %d", response.ID)
 	return response, nil
+}
+
+func (s *AssessmentServiceImpl) UploadPhoto(
+    assessmentSeq string,
+    userID string,
+    sessionID string,
+    photoData []byte,
+) error {
+    return s.assessmentRepo.SavePhoto(
+        assessmentSeq,
+        userID,
+        sessionID,
+        photoData,
+    )
+}
+
+func (s *AssessmentServiceImpl) UploadVoice(
+    assessmentSeq string,
+    userID string,
+    sessionID string,
+    voiceData []byte,
+) error {
+    return s.assessmentRepo.SaveVoice(
+        assessmentSeq,
+        userID,
+        sessionID,
+        voiceData,
+    )
+}
+
+
+func (s *AssessmentServiceImpl) StartAssessment(userID, assessmentSequence string) (string, error) {
+
+    assessment, err := s.assessmentRepo.GetAssessmentMstByAssmtSeq(assessmentSequence)
+    if err != nil {
+        return "", err
+    }
+    if assessment == nil {
+        return "", errors.New("assessment not found")
+    }
+
+    tx := s.db.Begin()
+
+    session, err := s.assessmentRepo.GetOrCreateUserSession(
+        tx,
+        userID,
+        assessmentSequence,
+        assessment.AssessmentType,
+        assessment.PartnerID,
+    )
+    if err != nil {
+        tx.Rollback()
+        return "", err
+    }
+
+    _, err = s.assessmentRepo.UpdateAssessmentStatus(
+        tx,
+        userID,
+        assessmentSequence,
+        "STARTED",
+    )
+    if err != nil {
+        tx.Rollback()
+        return "", err
+    }
+
+    if err := tx.Commit().Error; err != nil {
+        return "", err
+    }
+
+    return session.SessionID.String(), nil
 }
