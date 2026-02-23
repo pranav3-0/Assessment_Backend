@@ -293,7 +293,6 @@ func (s *AssessmentServiceImpl) GetUserAssessments(
 		return asmt, 0, nil
 	}
 
-	// Case 2: Get sessions of specific assessment
 	if filters.AssessmentSequence != nil {
 		return s.assessmentRepo.GetUserAssessmentSessions(
 			userId,
@@ -301,7 +300,6 @@ func (s *AssessmentServiceImpl) GetUserAssessments(
 		)
 	}
 
-	// Case 3: Paginated list (MAIN LIST API)
 	assessments, total, err := s.assessmentRepo.GetAssessmentsForUserWithPagination(
 		userId,
 		limit,
@@ -356,20 +354,47 @@ func (s *AssessmentServiceImpl) GetManagerAssessments(
 	)
 }
 
-func (s *AssessmentServiceImpl) GetAssessments(limit, offset int, filters *models.AssessmentFilter) (interface{}, int64, error) {
-	if filters.AssessmentSessionId != nil && filters.AssessmentSequence != nil {
-		asmt, err := s.assessmentRepo.GetUserAssessmentResponse(nil, *filters.AssessmentSequence, *filters.AssessmentSessionId, string(constant.Admin))
-		if err != nil {
-			return nil, 0, err
-		}
-		return asmt, 0, nil
-	}
-	if filters.AssessmentSequence != nil {
-		return s.assessmentRepo.GetAssessmentsAttendeeInfo(*filters.AssessmentSequence, limit, offset)
-	}
-	return s.assessmentRepo.GetAssessmentsWithPagination(limit, offset)
-}
+func (s *AssessmentServiceImpl) GetAssessments(
+    limit, offset int,
+    filters *models.AssessmentFilter,
+) (interface{}, int64, error) {
 
+    if filters.AssessmentSessionId != nil && filters.AssessmentSequence != nil {
+        asmt, err := s.assessmentRepo.GetUserAssessmentResponse(
+            nil,
+            *filters.AssessmentSequence,
+            *filters.AssessmentSessionId,
+            string(constant.Admin),
+        )
+        if err != nil {
+            return nil, 0, err
+        }
+        return asmt, 0, nil
+    }
+
+    if filters.AssessmentSequence != nil {
+        return s.assessmentRepo.GetAssessmentsAttendeeInfo(
+            *filters.AssessmentSequence,
+            limit,
+            offset,
+        )
+    }
+
+    // 🔥 FIX STARTS HERE
+    assessments, total, err := s.assessmentRepo.GetAssessmentsWithPagination(limit, offset)
+    if err != nil {
+        return nil, 0, err
+    }
+
+    for i, a := range assessments {
+        tags, err := s.assessmentRepo.GetTagsByAssessmentSequence(a.AssessmentSequence)
+        if err == nil {
+            assessments[i].Tags = tags
+        }
+    }
+
+    return assessments, total, nil
+}
 
 func (s *AssessmentServiceImpl) GetQuestions(limit, offset int) (interface{}, int64, error) {
 	return s.assessmentRepo.GetPaginatedQuestionsWithOptions(limit, offset)
@@ -1029,7 +1054,6 @@ func (s *AssessmentServiceImpl) CreateSessionImage(userID, sessionID string, ima
 	}
 	log.Printf("Image data size: %d bytes", len(imageData))
 
-	// Parse session UUID
 	log.Printf("Parsing session UUID: %s", sessionID)
 	sessionUUID, err := uuid.Parse(sessionID)
 	if err != nil {
@@ -1038,7 +1062,6 @@ func (s *AssessmentServiceImpl) CreateSessionImage(userID, sessionID string, ima
 	}
 	log.Printf("Successfully parsed UUID: %s", sessionUUID.String())
 
-	// Verify session exists and belongs to user
 	log.Printf("Verifying session exists for user: %s", userID)
 	session, err := s.assessmentRepo.GetSessionByID(sessionID, userID)
 	if err != nil {
@@ -1051,7 +1074,6 @@ func (s *AssessmentServiceImpl) CreateSessionImage(userID, sessionID string, ima
 	}
 	log.Printf("Session verified successfully. AssessmentID: %s", session.AssessmentID)
 
-	// Create session image record
 	currentTime := time.Now()
 	sessionImage := &models.AssessmentUserSessionImage{
 		SessionID:  sessionUUID,
@@ -1065,7 +1087,6 @@ func (s *AssessmentServiceImpl) CreateSessionImage(userID, sessionID string, ima
 	}
 	log.Printf("Created session image record for session: %s", sessionUUID.String())
 
-	// Save to database in transaction
 	log.Println("Starting database transaction to save session image")
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := s.assessmentRepo.CreateSessionImage(tx, sessionImage); err != nil {
@@ -1081,7 +1102,6 @@ func (s *AssessmentServiceImpl) CreateSessionImage(userID, sessionID string, ima
 		return nil, err
 	}
 
-	// Return response
 	response := &models.SessionImageResponse{
 		ID:        sessionImage.ID,
 		SessionID: sessionImage.SessionID,

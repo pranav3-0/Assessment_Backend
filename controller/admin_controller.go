@@ -321,27 +321,29 @@ func (ac *AdminController) GetJobDescriptions(ctx *gin.Context) {
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "job_descriptions", jobs, pagination, nil)
 }
 
-func (ac *AdminController) CreateQuestion(ctx *gin.Context) {
+func (ac *AdminController) CreateMultipleQuestions(ctx *gin.Context) {
 
-	var req models.CreateQuestionRequest
+    var req models.CreateQuestionsRequest
 
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		models.ErrorResponse(ctx, constant.Failure, http.StatusBadRequest, "Invalid request body", nil, err)
-		return
-	}
+    if err := ctx.ShouldBindJSON(&req); err != nil {
+        models.ErrorResponse(ctx, constant.Failure, http.StatusBadRequest, "Invalid request body", nil, err)
+        return
+    }
 
-	_, userId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
-	if err != nil {
-		models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
-		return
-	}
+    _, userId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+    if err != nil {
+        models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
+        return
+    }
 
-	questionID, err := ac.questionService.CreateQuestion(req, userId)
-	if err != nil {
-		models.ErrorResponse(ctx, constant.Failure, http.StatusInternalServerError, "Failed to create question", nil, err)
-		return
-	}
+    questionIDs, err := ac.questionService.CreateMultipleQuestions(req.Questions, userId)
+    if err != nil {
+        models.ErrorResponse(ctx, constant.Failure, http.StatusInternalServerError, "Failed to create questions", nil, err)
+        return
+    }
 
-	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Question created successfully",
-		map[string]interface{}{"question_id": questionID}, nil, nil)
+    models.SuccessResponse(ctx, constant.Success, http.StatusOK,
+        "Questions created successfully",
+        map[string]interface{}{"question_ids": questionIDs},
+        nil, nil)
 }

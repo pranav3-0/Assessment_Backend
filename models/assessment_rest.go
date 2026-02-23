@@ -2,13 +2,12 @@ package models
 
 import (
 	"time"
-	"github.com/lib/pq"
 )
 
 type GetAssessmentRequest struct {
-    AssessmentId string `json:"assessment_sequence"`
-    SessionID    string `json:"session_id"`
-    UserId       string `json:"-"`
+	AssessmentId string `json:"assessment_sequence"`
+	SessionID    string `json:"session_id"`
+	UserId       string `json:"-"`
 }
 
 type DuplicateAssessmentRequest struct {
@@ -97,7 +96,7 @@ type AssessmentListResponse struct {
 	TypingResult        *AssessmentTypingResult `json:"typing_result" gorm:"-"`
 	SessionImage        []byte                  `json:"session_image,omitempty" gorm:"-"`
 	JobTitle            *string                 `json:"job_title"`
-	Tags pq.StringArray `json:"tags" gorm:"column:tags;type:text[]"`
+	Tags                []TagRequest            `json:"tags" gorm:"-"`
 }
 
 type AssessmentAttendeesInfo struct {
@@ -162,7 +161,7 @@ type UpdateAssessmentRequest struct {
 	AssessmentDetails  AssessmentUpdate `json:"assessment_details"`
 	Questions          []QuestionDTO    `json:"questions"`
 	DeletedQuestionIDs []int64          `json:"deleted_question_ids"`
-	Tags               []TagRequest     `json:"tags,omitempty"` 
+	Tags               []TagRequest     `json:"tags,omitempty"`
 }
 
 type AssessmentUpdate struct {

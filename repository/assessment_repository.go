@@ -65,7 +65,7 @@ type AssessmentRepository interface {
 	GetAllParentTags(tx *gorm.DB, tagID int64) ([]int64, error)
 	CreateAssessmentTagMapping(tx *gorm.DB, assessmentSequence string, tagID int64, createdBy string) error
 	CreateAssessmentTagMappingWithParents(tx *gorm.DB, assessmentSequence string, tagID int64, createdBy string) error
-	GetTagsByAssessmentSequence(assessmentSequence string) ([]string, error)
+	GetTagsByAssessmentSequence(sequence string) ([]models.TagRequest, error)
 	GetTagRequestsByAssessmentSequence(assessmentSequence string) ([]models.TagRequest, error)
 
 	// Question Tag Operations
@@ -640,94 +640,80 @@ func (r *AssessmentRepositoryImpl) UpdateOption(tx *gorm.DB, option *models.Opti
 
 // Admin Repo functions
 func (r *AssessmentRepositoryImpl) GetAssessmentsWithPagination(limit int, offset int) ([]*models.AssessmentListResponse, int64, error) {
+
 	var assessments []*models.AssessmentListResponse
 	var totalRecords int64
 
 	countQuery := `
-	SELECT COUNT(*)
-	FROM assessment_mst am
-	JOIN dhl_survey_survey_ext sse 
-		ON am.assessment_sequence = sse.assessment_sequence
-	`
+        SELECT COUNT(*)
+        FROM assessment_mst am
+        JOIN dhl_survey_survey_ext sse 
+            ON am.assessment_sequence = sse.assessment_sequence
+    `
+
 	if err := r.db.Raw(countQuery).Scan(&totalRecords).Error; err != nil {
 		return nil, 0, err
 	}
 
 	query := `
-SELECT 
-    am.assessment_id,
-    am.assessment_sequence,
-    am.assessment_desc AS assessment_title,
-    am.assessment_type,  
-    sse.time_limit,
-    am.marks,
-    am.valid_to AS deadline,
-    sse.state,
-    jd.title AS job_title,              
-    dc.center_name,
-    dsl.name AS service_line_name,
-    dbp.name AS business_partner_name,
-    dsbp.name AS sub_business_partner_name,
-    dsg.name AS service_group_name,
-    ds.service_name AS service_name,
+    SELECT 
+        am.assessment_id,
+        am.assessment_sequence,
+        am.assessment_desc AS assessment_title,
+        am.assessment_type,  
+        sse.time_limit,
+        am.marks,
+        am.valid_to AS deadline,
+        sse.state,
+        jd.title AS job_title,              
+        dc.center_name,
+        dsl.name AS service_line_name,
+        dbp.name AS business_partner_name,
+        dsbp.name AS sub_business_partner_name,
+        dsg.name AS service_group_name,
+        ds.service_name AS service_name
 
-    COALESCE(
-        array_agg(DISTINCT tm.tag)
-        FILTER (WHERE tm.tag IS NOT NULL),
-        '{}'
-    ) AS tags
+    FROM assessment_mst am
 
-FROM assessment_mst am
+    JOIN dhl_survey_survey_ext sse 
+        ON am.assessment_sequence = sse.assessment_sequence
 
-JOIN dhl_survey_survey_ext sse 
-    ON am.assessment_sequence = sse.assessment_sequence
+    LEFT JOIN job_descriptions jd              
+        ON am.job_id = jd.job_id               
 
-LEFT JOIN job_descriptions jd              
-    ON am.job_id = jd.job_id               
+    LEFT JOIN dhl_center dc
+        ON dc.center_id = sse.center_id
+    LEFT JOIN dhl_service_line dsl
+        ON dsl.service_line_id = sse.service_line_id
+    LEFT JOIN dhl_business_partner dbp
+        ON dbp.business_partner_id = sse.business_partner_id
+    LEFT JOIN dhl_sub_business_partner dsbp
+        ON dsbp.sub_business_partner_id = sse.sub_business_partner_id
+    LEFT JOIN dhl_service_group dsg
+        ON dsg.service_grp_id = sse.service_group_id
+    LEFT JOIN dhl_service ds
+        ON ds.service_id = sse.service_id
 
-LEFT JOIN dhl_center dc
-    ON dc.center_id = sse.center_id
-LEFT JOIN dhl_service_line dsl
-    ON dsl.service_line_id = sse.service_line_id
-LEFT JOIN dhl_business_partner dbp
-    ON dbp.business_partner_id = sse.business_partner_id
-LEFT JOIN dhl_sub_business_partner dsbp
-    ON dsbp.sub_business_partner_id = sse.sub_business_partner_id
-LEFT JOIN dhl_service_group dsg
-    ON dsg.service_grp_id = sse.service_group_id
-LEFT JOIN dhl_service ds
-    ON ds.service_id = sse.service_id
+    GROUP BY 
+        am.assessment_id,
+        am.assessment_sequence,
+        am.assessment_desc,
+        am.assessment_type,
+        sse.time_limit,
+        am.marks,
+        am.valid_to,
+        sse.state,
+        jd.title,
+        dc.center_name,
+        dsl.name,
+        dbp.name,
+        dsbp.name,
+        dsg.name,
+        ds.service_name
 
--- 🔥 CORRECT TAG JOIN
-LEFT JOIN assessment_tag_mapping atm
-    ON atm.assessment_sequence = am.assessment_sequence
-    AND atm.is_deleted = false
-
-LEFT JOIN tag_mst tm
-    ON tm.tag_id = atm.tag_id
-    AND tm.is_deleted = false
-    AND tm.is_active = true
-
-GROUP BY 
-    am.assessment_id,
-    am.assessment_sequence,
-    am.assessment_desc,
-    am.assessment_type,
-    sse.time_limit,
-    am.marks,
-    am.valid_to,
-    sse.state,
-    jd.title,
-    dc.center_name,
-    dsl.name,
-    dbp.name,
-    dsbp.name,
-    dsg.name,
-    ds.service_name
-
-ORDER BY am.created_on DESC
-LIMIT ? OFFSET ?
-`
+    ORDER BY am.created_on DESC
+    LIMIT ? OFFSET ?
+    `
 
 	if err := r.db.Raw(query, limit, offset).Scan(&assessments).Error; err != nil {
 		return nil, 0, err
@@ -1301,11 +1287,11 @@ func (r *AssessmentRepositoryImpl) GetPaginatedQuestionsWithOptions(limit, offse
 
 	sql := `
 		WITH qids AS (
-			SELECT q.question_id
-			FROM question_mst q
-			ORDER BY q.question_id
-			LIMIT ? OFFSET ?
-		)
+    SELECT q.question_id
+    FROM question_mst q
+    ORDER BY q.question_id DESC
+    LIMIT ? OFFSET ?
+                     )
 		SELECT 
 			q.question_id,
 			qc.value AS question_title,
@@ -1356,11 +1342,15 @@ func (r *AssessmentRepositoryImpl) GetPaginatedQuestionsWithOptions(limit, offse
 	}
 
 	// Convert map → slice
-	questions := make([]*models.QuestionDTO, 0, len(questionsMap))
-	for _, q := range questionsMap {
-		questions = append(questions, q)
-	}
+	questions := make([]*models.QuestionDTO, 0)
+	seen := make(map[int64]bool)
 
+	for _, row := range rows {
+		if !seen[row.QuestionID] {
+			questions = append(questions, questionsMap[row.QuestionID])
+			seen[row.QuestionID] = true
+		}
+	}
 	return questions, total, nil
 }
 
@@ -1630,23 +1620,62 @@ func (r *AssessmentRepositoryImpl) CreateAssessmentTagMapping(tx *gorm.DB, asses
 	return nil
 }
 
-func (r *AssessmentRepositoryImpl) GetTagsByAssessmentSequence(assessmentSequence string) ([]string, error) {
-	var tags []string
-	query := `
-		SELECT tm.tag
+func (r *AssessmentRepositoryImpl) GetTagsByAssessmentSequence(
+	sequence string,
+) ([]models.TagRequest, error) {
+
+	type TagRow struct {
+		ParentTag *string `gorm:"column:parent_tag"`
+		ChildTag  string  `gorm:"column:child_tag"`
+	}
+
+	var rows []TagRow
+
+	err := r.db.Raw(`
+		SELECT 
+			pt.tag AS parent_tag,
+			ct.tag AS child_tag
 		FROM assessment_tag_mapping atm
-		INNER JOIN tag_mst tm ON atm.tag_id = tm.tag_id
+		JOIN tag_mst ct 
+			ON ct.tag_id = atm.tag_id
+		LEFT JOIN tag_mst pt 
+			ON pt.tag_id = ct.parent_tag_id
 		WHERE atm.assessment_sequence = ?
-		AND atm.is_deleted = false
-		AND atm.is_active = true
-		AND tm.is_deleted = false
-		AND tm.is_active = true
-		ORDER BY tm.tag
-	`
-	if err := r.db.Raw(query, assessmentSequence).Scan(&tags).Error; err != nil {
+		  AND atm.is_deleted = false
+		  AND atm.is_active = true
+	`, sequence).Scan(&rows).Error
+
+	if err != nil {
 		return nil, err
 	}
-	return tags, nil
+
+	if len(rows) == 0 {
+		return []models.TagRequest{}, nil
+	}
+
+	tagMap := make(map[string][]string)
+
+	for _, row := range rows {
+		if row.ParentTag == nil {
+			// Standalone tag (no parent)
+			if _, exists := tagMap[row.ChildTag]; !exists {
+				tagMap[row.ChildTag] = []string{}
+			}
+		} else {
+			parent := *row.ParentTag
+			tagMap[parent] = append(tagMap[parent], row.ChildTag)
+		}
+	}
+
+	var result []models.TagRequest
+	for parent, children := range tagMap {
+		result = append(result, models.TagRequest{
+			ParentTag: parent,
+			ChildTags: children,
+		})
+	}
+
+	return result, nil
 }
 
 // GetAllParentTags retrieves all parent tags recursively for a given tag

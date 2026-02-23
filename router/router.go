@@ -85,7 +85,7 @@ func getAdminRoutes(adminController *controller.AdminController, assessmentContr
 
 		Route{"Admin", http.MethodPost, constant.JobDescription, adminController.CreateJobDescription},
         Route{"Admin", http.MethodPost, constant.JobDescriptions, adminController.GetJobDescriptions},
-		Route{"Admin", http.MethodPost, constant.Question, adminController.CreateQuestion},
+		Route{"Admin", http.MethodPost, constant.Question, adminController.CreateMultipleQuestions},
 
 
 

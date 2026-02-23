@@ -13,3 +13,7 @@ type OptionReq struct {
 	IsCorrect bool   `json:"is_correct"`
 	Score     int64  `json:"score"`
 }
+
+type CreateQuestionsRequest struct {
+	Questions []CreateQuestionRequest `json:"questions" binding:"required,min=1"`
+}
