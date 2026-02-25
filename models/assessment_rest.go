@@ -242,7 +242,7 @@ type ManualAssessmentRequest struct {
 	AssessmentName       string       `json:"assessment_name"`
 	Duration             int64        `json:"duration"`
 	Marks                int64        `json:"marks"`
-	StartTime            *time.Time   `json:"start_time"`
+	StartTime            *string      `json:"start_time"`
 	ValidFrom            *time.Time   `json:"valid_from"`
 	ValidTo              *time.Time   `json:"valid_to"`
 	Instructions         string       `json:"instructions"`

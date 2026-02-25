@@ -86,6 +86,8 @@ func getAdminRoutes(adminController *controller.AdminController, assessmentContr
 		Route{"Admin", http.MethodPost, constant.JobDescription, adminController.CreateJobDescription},
         Route{"Admin", http.MethodPost, constant.JobDescriptions, adminController.GetJobDescriptions},
 		Route{"Admin", http.MethodPost, constant.Question, adminController.CreateMultipleQuestions},
+		Route{"Admin", http.MethodPost, constant.AssessmentUserResult, adminController.GetAssessmentUserResult},
+		Route{"Admin", http.MethodPost, constant.CheckAssessmentAssignment, adminController.CheckAssessmentAssignment},
 
 
 
@@ -176,6 +178,7 @@ func getAssessmentRoutes(assessmentController *controller.AssessmentController) 
 		Route{"Assessment", http.MethodPost, constant.AssessmentVerificationPhoto, assessmentController.UploadPhoto},
 		Route{"Assessment", http.MethodPost, constant.AssessmentVerificationVoice, assessmentController.UploadVoice},
 		Route{"Assessment", http.MethodPost, constant.AssessmentStart, assessmentController.StartAssessment},
+		Route{"Assessment", http.MethodPost, constant.AssessmentResultView, assessmentController.GetUserAssessmentResult},
 
 	}
 }

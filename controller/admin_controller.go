@@ -347,3 +347,43 @@ func (ac *AdminController) CreateMultipleQuestions(ctx *gin.Context) {
         map[string]interface{}{"question_ids": questionIDs},
         nil, nil)
 }
+
+
+func (ac *AdminController) GetAssessmentUserResult(ctx *gin.Context) {
+
+	var req struct {
+		AssessmentSequence string `json:"assessment_sequence"`
+		UserID             string `json:"user_id"`
+	}
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusBadRequest, err.Error(), nil, err)
+		return
+	}
+
+	resp, err := ac.assessmentService.GetAdminAssessmentUserResult(req.AssessmentSequence, req.UserID)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusInternalServerError, err.Error(), nil, err)
+		return
+	}
+
+	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "user_result", resp, nil, nil)
+}
+
+func (uc *AdminController) CheckAssessmentAssignment(ctx *gin.Context) {
+
+	var req models.CheckAssignmentRequest
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusBadRequest, "Invalid request", nil, err)
+		return
+	}
+
+	resp, err := uc.assessmentService.CheckUserAssignment(req.AssessmentSequence, req.UserIDs)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusInternalServerError, "Failed to check assignment", nil, err)
+		return
+	}
+
+	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "assignment_status", resp, nil, nil)
+}

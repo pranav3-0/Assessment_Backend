@@ -52,6 +52,9 @@ const (
 	AssessmentVerificationPhoto = "/verification/photo"
 	AssessmentVerificationVoice = "/verification/voice"
 	AssessmentStart             = "/start"
+	AssessmentUserResult        = "/assessment-user-result"
+	AssessmentResultView        = "/assessment-result"
+	CheckAssessmentAssignment   = "/assessment/check-assignment"
 )
 
 type UserRole string

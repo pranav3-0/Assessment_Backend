@@ -23,6 +23,7 @@ type AssessmentResult struct {
 	AttemptCount        int64      `gorm:"column:attempt_count"`
 	AttemptTime         int64      `gorm:"column:attempt_time"`
 	BonusPointAssigned  int64      `gorm:"column:bonus_point_assigned"`
+	SelectedOptionIDs   string     `gorm:"column:selected_option_ids"`
 }
 
 func (AssessmentResult) TableName() string {

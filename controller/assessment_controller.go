@@ -484,3 +484,29 @@ func (ac *AssessmentController) StartAssessment(ctx *gin.Context) {
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Assessment started", response, nil, nil)
 }
 
+func (ac *AssessmentController) GetUserAssessmentResult(ctx *gin.Context) {
+
+	// Get user ID from token
+	_, userId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
+		return
+	}
+
+	var req struct {
+		AssessmentSequence string `json:"assessment_sequence"`
+	}
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusBadRequest, err.Error(), nil, err)
+		return
+	}
+
+	resp, err := ac.assessmentService.GetAdminAssessmentUserResult(req.AssessmentSequence, userId)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusInternalServerError, err.Error(), nil, err)
+		return
+	}
+
+	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "result", resp, nil, nil)
+}

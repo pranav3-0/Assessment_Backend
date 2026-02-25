@@ -10,6 +10,7 @@ import (
 	"log"
 	"mime/multipart"
 	"time"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
@@ -41,10 +42,11 @@ type AssessmentService interface {
 	UpdateAssessmentService(models.UpdateAssessmentRequest) error
 	UpdateAssessmentStatusService(models.UpdateAssessmentStatusRequest) error
 
-	UploadPhoto(assessmentSeq string,userID string,sessionID string,photoData []byte,) error
-	UploadVoice(assessmentSeq string,userID string,sessionID string,voiceData []byte,) error
+	UploadPhoto(assessmentSeq string, userID string, sessionID string, photoData []byte) error
+	UploadVoice(assessmentSeq string, userID string, sessionID string, voiceData []byte) error
 	StartAssessment(userID, assessmentSequence string) (string, error)
-
+	GetAdminAssessmentUserResult(assessmentSeq string, userId string) (*models.AdminAssessmentUserResultResponse, error)
+	CheckUserAssignment(assessmentSeq string, userIDs []string) ([]models.CheckAssignmentResponse, error)
 }
 
 type AssessmentServiceImpl struct {
@@ -272,7 +274,6 @@ func (s *AssessmentServiceImpl) GetUserAssessment(req models.GetAssessmentReques
 	return resp, nil
 }
 
-
 func (s *AssessmentServiceImpl) GetUserAssessments(
 	userId string,
 	limit, offset int,
@@ -355,45 +356,45 @@ func (s *AssessmentServiceImpl) GetManagerAssessments(
 }
 
 func (s *AssessmentServiceImpl) GetAssessments(
-    limit, offset int,
-    filters *models.AssessmentFilter,
+	limit, offset int,
+	filters *models.AssessmentFilter,
 ) (interface{}, int64, error) {
 
-    if filters.AssessmentSessionId != nil && filters.AssessmentSequence != nil {
-        asmt, err := s.assessmentRepo.GetUserAssessmentResponse(
-            nil,
-            *filters.AssessmentSequence,
-            *filters.AssessmentSessionId,
-            string(constant.Admin),
-        )
-        if err != nil {
-            return nil, 0, err
-        }
-        return asmt, 0, nil
-    }
+	if filters.AssessmentSessionId != nil && filters.AssessmentSequence != nil {
+		asmt, err := s.assessmentRepo.GetUserAssessmentResponse(
+			nil,
+			*filters.AssessmentSequence,
+			*filters.AssessmentSessionId,
+			string(constant.Admin),
+		)
+		if err != nil {
+			return nil, 0, err
+		}
+		return asmt, 0, nil
+	}
 
-    if filters.AssessmentSequence != nil {
-        return s.assessmentRepo.GetAssessmentsAttendeeInfo(
-            *filters.AssessmentSequence,
-            limit,
-            offset,
-        )
-    }
+	if filters.AssessmentSequence != nil {
+		return s.assessmentRepo.GetAssessmentsAttendeeInfo(
+			*filters.AssessmentSequence,
+			limit,
+			offset,
+		)
+	}
 
-    // 🔥 FIX STARTS HERE
-    assessments, total, err := s.assessmentRepo.GetAssessmentsWithPagination(limit, offset)
-    if err != nil {
-        return nil, 0, err
-    }
+	// 🔥 FIX STARTS HERE
+	assessments, total, err := s.assessmentRepo.GetAssessmentsWithPagination(limit, offset)
+	if err != nil {
+		return nil, 0, err
+	}
 
-    for i, a := range assessments {
-        tags, err := s.assessmentRepo.GetTagsByAssessmentSequence(a.AssessmentSequence)
-        if err == nil {
-            assessments[i].Tags = tags
-        }
-    }
+	for i, a := range assessments {
+		tags, err := s.assessmentRepo.GetTagsByAssessmentSequence(a.AssessmentSequence)
+		if err == nil {
+			assessments[i].Tags = tags
+		}
+	}
 
-    return assessments, total, nil
+	return assessments, total, nil
 }
 
 func (s *AssessmentServiceImpl) GetQuestions(limit, offset int) (interface{}, int64, error) {
@@ -510,7 +511,12 @@ func (s *AssessmentServiceImpl) CreateAssessmentViaFileUpload(file multipart.Fil
 	return jsonResponse, nil
 }
 
-func (s *AssessmentServiceImpl) CreateAssessmentViaMaual(ctx context.Context, req models.ManualAssessmentRequest, userId string) (interface{}, error) {
+func (s *AssessmentServiceImpl) CreateAssessmentViaMaual(
+	ctx context.Context,
+	req models.ManualAssessmentRequest,
+	userId string,
+) (interface{}, error) {
+
 	tx := s.db.Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -531,11 +537,13 @@ func (s *AssessmentServiceImpl) CreateAssessmentViaMaual(ctx context.Context, re
 		IsActive:       true,
 		IsDeleted:      false,
 	}
+
 	asmt, err := s.assessmentRepo.CreateAssessment(ctx, tx, assessment)
 	if err != nil {
 		tx.Rollback()
 		return nil, err
 	}
+
 	ext := &models.DhlSurveySurveyExt{
 		SurveyID:               asmt.AssessmentID,
 		AssessmentSequence:     asmt.AssessmentSequence,
@@ -562,13 +570,51 @@ func (s *AssessmentServiceImpl) CreateAssessmentViaMaual(ctx context.Context, re
 		return nil, err
 	}
 
-	err = s.assessmentRepo.CreateAssessmentQuestions(ctx, tx, asmt.AssessmentID, asmt.AssessmentSequence, req.Questions, userId)
-	if err != nil {
+	// 🔥 MARKS DISTRIBUTION LOGIC
+	questionCount := len(req.Questions)
+
+	if questionCount == 0 {
 		tx.Rollback()
-		return nil, err
+		return nil, errors.New("no questions selected")
 	}
 
-	// Handle tags if provided (with parent-child tag support)
+	marksPerQuestion := req.Marks / int64(questionCount)
+remainder := req.Marks % int64(questionCount)
+
+for index, questionID := range req.Questions {
+
+    points := marksPerQuestion
+
+    // Distribute remaining marks
+    if int64(index) < remainder {
+        points += 1
+    }
+
+    mapping := models.AssessmentQuestionMst{
+        AssessmentID:       int(asmt.AssessmentID),
+        AssessmentSequence: asmt.AssessmentSequence,
+        QuestionID:         questionID,
+        SequenceID:         int64(index + 1),
+
+        CorrectPoints:     points,
+        NegativePoints:    0,
+        DurationInSeconds: 0,
+        SkippingAllowed:   false,
+
+        CreatedBy:  userId,
+        CreatedOn:  time.Now(),
+        ModifiedOn: time.Now(),
+        IsActive:   true,
+        IsDeleted:  false,
+    }
+
+    if err := tx.Create(&mapping).Error; err != nil {
+        tx.Rollback()
+        return nil, err
+    }
+}
+
+	// TAGS
 	if len(req.Tags) > 0 {
 		for _, tagReq := range req.Tags {
 			tagIDs, err := s.assessmentRepo.ProcessTagRequest(tx, tagReq, userId)
@@ -577,7 +623,12 @@ func (s *AssessmentServiceImpl) CreateAssessmentViaMaual(ctx context.Context, re
 				return nil, err
 			}
 			for _, tagID := range tagIDs {
-				if err := s.assessmentRepo.CreateAssessmentTagMappingWithParents(tx, asmt.AssessmentSequence, tagID, userId); err != nil {
+				if err := s.assessmentRepo.CreateAssessmentTagMappingWithParents(
+					tx,
+					asmt.AssessmentSequence,
+					tagID,
+					userId,
+				); err != nil {
 					tx.Rollback()
 					return nil, err
 				}
@@ -599,6 +650,7 @@ func (s *AssessmentServiceImpl) CreateAssessmentViaMaual(ctx context.Context, re
 		AssessmentStatus:   createdExt.State,
 		Tags:               tags,
 	}
+
 	return response, nil
 }
 
@@ -631,25 +683,67 @@ func (s *AssessmentServiceImpl) SubmitAssessment(userID string, req models.Submi
 	return nil
 }
 
-func (s *AssessmentServiceImpl) DistributeAssessmentUser(assessmentSeq string, userIDs []string) error {
+func (s *AssessmentServiceImpl) DistributeAssessmentUser(
+	assessmentSeq string,
+	userIDs []string,
+) error {
+
 	asmt, err := s.assessmentRepo.GetAssessmentMstByAssmtSeq(assessmentSeq)
 	if err != nil {
-		return nil
+		return err
 	}
 	if asmt == nil {
 		return errors.New("assessment not found")
 	}
+
 	tx := s.db.Begin()
+
 	for _, uid := range userIDs {
-		_, err := s.assessmentRepo.UpdateAssessmentStatus(tx, uid, assessmentSeq, "ASSIGNED")
+
+		// 🔎 Check if assignment already exists
+		var existing models.AssessmentStatus
+
+		err := tx.Where(
+			"user_id = ? AND assessment_id = ?",
+			uid,
+			assessmentSeq,
+		).First(&existing).Error
+
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+
+			// 🆕 First time assignment
+			_, err = s.assessmentRepo.UpdateAssessmentStatus(
+				tx,
+				uid,
+				assessmentSeq,
+				"ASSIGNED",
+			)
+
+		} else if err == nil {
+
+			// 🔁 Already assigned before → mark REASSIGNED
+			_, err = s.assessmentRepo.UpdateAssessmentStatus(
+				tx,
+				uid,
+				assessmentSeq,
+				"REASSIGNED",
+			)
+
+		} else {
+			tx.Rollback()
+			return err
+		}
+
 		if err != nil {
 			tx.Rollback()
 			return err
 		}
 	}
+
 	if err := tx.Commit().Error; err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -745,10 +839,8 @@ func (s *AssessmentServiceImpl) UpdateAssessmentService(request models.UpdateAss
 		assessmentUpdates.AssessmentType = *request.AssessmentDetails.AssessmentType
 	}
 	if request.AssessmentDetails.JobID != nil {
-    assessmentUpdates.JobID = request.AssessmentDetails.JobID
-}
-
-
+		assessmentUpdates.JobID = request.AssessmentDetails.JobID
+	}
 
 	err = s.assessmentRepo.UpdateAssessment(tx, assessmentUpdates)
 	if err != nil {
@@ -806,35 +898,35 @@ func (s *AssessmentServiceImpl) UpdateAssessmentService(request models.UpdateAss
 		tx.Rollback()
 		return err
 	}
-if len(request.Tags) > 0 {
+	if len(request.Tags) > 0 {
 
-	if err := tx.Where("assessment_sequence = ?", assment.AssessmentSequence).
-		Delete(&models.AssessmentTagMapping{}).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
-
-	for _, tagReq := range request.Tags {
-
-		tagIDs, err := s.assessmentRepo.ProcessTagRequest(tx, tagReq, "system")
-		if err != nil {
+		if err := tx.Where("assessment_sequence = ?", assment.AssessmentSequence).
+			Delete(&models.AssessmentTagMapping{}).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
 
-		for _, tagID := range tagIDs {
-			if err := s.assessmentRepo.CreateAssessmentTagMappingWithParents(
-				tx,
-				assment.AssessmentSequence,
-				tagID,
-				"system",
-			); err != nil {
+		for _, tagReq := range request.Tags {
+
+			tagIDs, err := s.assessmentRepo.ProcessTagRequest(tx, tagReq, "system")
+			if err != nil {
 				tx.Rollback()
 				return err
 			}
+
+			for _, tagID := range tagIDs {
+				if err := s.assessmentRepo.CreateAssessmentTagMappingWithParents(
+					tx,
+					assment.AssessmentSequence,
+					tagID,
+					"system",
+				); err != nil {
+					tx.Rollback()
+					return err
+				}
+			}
 		}
 	}
-}
 
 	for _, question := range request.Questions {
 		if question.QuestionID == 0 {
@@ -1113,72 +1205,198 @@ func (s *AssessmentServiceImpl) CreateSessionImage(userID, sessionID string, ima
 }
 
 func (s *AssessmentServiceImpl) UploadPhoto(
-    assessmentSeq string,
-    userID string,
-    sessionID string,
-    photoData []byte,
+	assessmentSeq string,
+	userID string,
+	sessionID string,
+	photoData []byte,
 ) error {
-    return s.assessmentRepo.SavePhoto(
-        assessmentSeq,
-        userID,
-        sessionID,
-        photoData,
-    )
+	return s.assessmentRepo.SavePhoto(
+		assessmentSeq,
+		userID,
+		sessionID,
+		photoData,
+	)
 }
 
 func (s *AssessmentServiceImpl) UploadVoice(
-    assessmentSeq string,
-    userID string,
-    sessionID string,
-    voiceData []byte,
+	assessmentSeq string,
+	userID string,
+	sessionID string,
+	voiceData []byte,
 ) error {
-    return s.assessmentRepo.SaveVoice(
-        assessmentSeq,
-        userID,
-        sessionID,
-        voiceData,
-    )
+	return s.assessmentRepo.SaveVoice(
+		assessmentSeq,
+		userID,
+		sessionID,
+		voiceData,
+	)
 }
-
 
 func (s *AssessmentServiceImpl) StartAssessment(userID, assessmentSequence string) (string, error) {
 
-    assessment, err := s.assessmentRepo.GetAssessmentMstByAssmtSeq(assessmentSequence)
-    if err != nil {
-        return "", err
-    }
-    if assessment == nil {
-        return "", errors.New("assessment not found")
-    }
+	assessment, err := s.assessmentRepo.GetAssessmentMstByAssmtSeq(assessmentSequence)
+	if err != nil {
+		return "", err
+	}
+	if assessment == nil {
+		return "", errors.New("assessment not found")
+	}
 
-    tx := s.db.Begin()
+	tx := s.db.Begin()
 
-    session, err := s.assessmentRepo.GetOrCreateUserSession(
-        tx,
-        userID,
-        assessmentSequence,
-        assessment.AssessmentType,
-        assessment.PartnerID,
-    )
-    if err != nil {
-        tx.Rollback()
-        return "", err
-    }
+session, err := s.assessmentRepo.CreateUserSession(
+	tx,
+	userID,
+	assessmentSequence,
+	assessment.AssessmentType,
+	assessment.PartnerID,
+)
+	if err != nil {
+		tx.Rollback()
+		return "", err
+	}
 
-    _, err = s.assessmentRepo.UpdateAssessmentStatus(
-        tx,
-        userID,
-        assessmentSequence,
-        "STARTED",
-    )
-    if err != nil {
-        tx.Rollback()
-        return "", err
-    }
+	_, err = s.assessmentRepo.UpdateAssessmentStatus(
+		tx,
+		userID,
+		assessmentSequence,
+		"STARTED",
+	)
+	if err != nil {
+		tx.Rollback()
+		return "", err
+	}
 
-    if err := tx.Commit().Error; err != nil {
-        return "", err
-    }
+	if err := tx.Commit().Error; err != nil {
+		return "", err
+	}
 
-    return session.SessionID.String(), nil
+	return session.SessionID.String(), nil
+}
+
+func (s *AssessmentServiceImpl) GetAdminAssessmentUserResult(
+	assessmentSeq string,
+	userId string,
+) (*models.AdminAssessmentUserResultResponse, error) {
+
+	rows, err := s.assessmentRepo.GetAdminAssessmentUserResult(assessmentSeq, userId)
+	if err != nil {
+		return nil, err
+	}
+
+	attemptMap := make(map[string]*models.AssessmentAttemptResult)
+
+	for _, row := range rows {
+
+		sessionID := safeString(row["assessment_session_id"])
+
+		if _, exists := attemptMap[sessionID]; !exists {
+			attemptMap[sessionID] = &models.AssessmentAttemptResult{
+				SessionID:        sessionID,
+				AttemptTime:      row["session_created_on"],
+				Questions:        []models.AdminQuestionResult{},
+				CompletionStatus: "Completed",
+			}
+		}
+
+		correctPoints := toInt64(row["correct_points"])
+		negativePoints := toInt64(row["negative_points"])
+		pointsAssigned := toInt64(row["point_assigned"])
+
+		attemptMap[sessionID].TotalMarks += correctPoints
+		attemptMap[sessionID].ObtainedMarks += pointsAssigned
+
+		isCorrect := pointsAssigned > 0
+
+		attemptMap[sessionID].Questions = append(
+			attemptMap[sessionID].Questions,
+			models.AdminQuestionResult{
+				QuestionID:     toInt64(row["question_id"]),
+				QuestionText:   safeString(row["question_text"]),
+				SelectedOption: safeString(row["selected_option"]),
+				CorrectOption:  safeString(row["correct_option"]),
+				IsCorrect:      isCorrect,
+				PointsAssigned: pointsAssigned,
+				CorrectPoints:  correctPoints,
+				NegativePoints: negativePoints,
+				AttemptCount:   toInt64(row["attempt_count"]),
+				AttemptTime:    toInt64(row["attempt_time"]),
+			},
+		)
+	}
+
+	var attempts []models.AssessmentAttemptResult
+
+	for _, attempt := range attemptMap {
+		if len(attempt.Questions) == 0 {
+			attempt.CompletionStatus = "Not Attempted"
+		}
+		attempts = append(attempts, *attempt)
+	}
+
+	return &models.AdminAssessmentUserResultResponse{
+		UserID:             userId,
+		AssessmentSequence: assessmentSeq,
+		Attempts:           attempts,
+	}, nil
+}
+
+func safeString(val interface{}) string {
+	if val == nil {
+		return ""
+	}
+
+	switch v := val.(type) {
+	case string:
+		return v
+	case []byte:
+		return string(v)
+	default:
+		return ""
+	}
+}
+func toInt64(val interface{}) int64 {
+	if val == nil {
+		return 0
+	}
+
+	switch v := val.(type) {
+	case int64:
+		return v
+	case int32:
+		return int64(v)
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case []byte:
+		i, _ := strconv.ParseInt(string(v), 10, 64)
+		return i
+	default:
+		return 0
+	}
+}
+
+
+
+func (s *AssessmentServiceImpl) CheckUserAssignment(
+	assessmentSeq string,
+	userIDs []string,
+) ([]models.CheckAssignmentResponse, error) {
+
+	statuses, err := s.assessmentRepo.CheckUserAssignment(assessmentSeq, userIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	var response []models.CheckAssignmentResponse
+
+	for _, st := range statuses {
+		response = append(response, models.CheckAssignmentResponse{
+			UserID:           st.UserID,
+			AssessmentStatus: st.AssessmentStatus,
+		})
+	}
+
+	return response, nil
 }

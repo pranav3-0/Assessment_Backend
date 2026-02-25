@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -16,7 +17,7 @@ import (
 type AssessmentRepository interface {
 	GetAssessmentMstByAssmtSeq(id string) (*models.AssessmentMst, error)
 	GetDhlSurveyExtByAssmtSeq(id string) (*models.DhlSurveySurveyExtResponse, error)
-	GetOrCreateUserSession(tx *gorm.DB, userID, assessmentID, assessmentType string, partnerID int64) (*models.AssessmentUserSession, error)
+	CreateUserSession(tx *gorm.DB, userID, assessmentID, assessmentType string, partnerID int64) (*models.AssessmentUserSession, error)
 	GetUserAssessmentsMap(userID string) ([]models.AssessmentStatus, error)
 	GetUserAssessmentStatus(tx *gorm.DB, userID, assessmentID string) (*models.AssessmentStatus, error)
 	GetAssessmentQuestions(assessmentSeq string) ([]models.AssessmentQuestionMst, error)
@@ -35,7 +36,7 @@ type AssessmentRepository interface {
 
 	CreateAssessment(ctx context.Context, tx *gorm.DB, assessment *models.AssessmentMst) (*models.AssessmentMst, error)
 	CreateAssessmentExt(ctx context.Context, tx *gorm.DB, ext *models.DhlSurveySurveyExt) (*models.DhlSurveySurveyExt, error)
-	CreateAssessmentQuestions(ctx context.Context, tx *gorm.DB, assessmentID int64, assessmentSequence string, questionIDs []int64, createdBy string) error
+	CreateAssessmentQuestions(ctx context.Context, tx *gorm.DB, assessmentID int64, assessmentSequence string, questionIDs []int64, createdBy string, marksPerQuestion int64) error
 	AddNewQuestion(tx *gorm.DB, question models.QuestionMain, assessmentSequence string) (int64, error)
 	AddNewOption(tx *gorm.DB, option models.OptionMain) error
 	SaveAssessmentWithQuestions(ctx context.Context, tx *gorm.DB, assessment models.SheetAssessment, userId string) (string, error)
@@ -76,8 +77,9 @@ type AssessmentRepository interface {
 	GetTagRequestsByQuestionIDs(questionIDs []int64) (map[int64][]models.TagRequest, error)
 
 	SavePhoto(assessmentSeq string, userID string, sessionID string, photoData []byte) error
-
 	SaveVoice(assessmentSeq string, userID string, sessionID string, voiceData []byte) error
+	GetAdminAssessmentUserResult(assessmentSeq string, userId string) ([]map[string]interface{}, error)
+	CheckUserAssignment(assessmentSeq string, userIDs []string) ([]models.AssessmentStatus, error)
 }
 
 type AssessmentRepositoryImpl struct {
@@ -151,38 +153,33 @@ func (r *AssessmentRepositoryImpl) GetDhlSurveyExtByAssmtSeq(id string) (*models
 	return &resp, nil
 }
 
-func (r *AssessmentRepositoryImpl) GetOrCreateUserSession(tx *gorm.DB, userID, assessmentID, assessmentType string, partnerID int64) (*models.AssessmentUserSession, error) {
-	var s models.AssessmentUserSession
+func (r *AssessmentRepositoryImpl) CreateUserSession(
+	tx *gorm.DB,
+	userID,
+	assessmentID,
+	assessmentType string,
+	partnerID int64,
+) (*models.AssessmentUserSession, error) {
+
 	createdOn := time.Now()
-	err := tx.Where("user_id = ? AND assessment_id = ? AND is_active = true", userID, assessmentID).First(&s).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		s = models.AssessmentUserSession{
-			SessionID:      models.GenerateUUID(),
-			UserID:         userID,
-			AssessmentID:   assessmentID,
-			AssessmentType: assessmentType,
-			PartnerID:      partnerID,
-			IsActive:       true,
-			IsDeleted:      false,
-			AccessTime:     createdOn,
-			CreatedOn:      createdOn,
-			CreatedBy:      userID,
-		}
-		if err := tx.Create(&s).Error; err != nil {
-			return nil, err
-		}
-		return &s, nil
+
+	s := models.AssessmentUserSession{
+		SessionID:      models.GenerateUUID(),
+		UserID:         userID,
+		AssessmentID:   assessmentID,
+		AssessmentType: assessmentType,
+		PartnerID:      partnerID,
+		IsActive:       true,
+		IsDeleted:      false,
+		AccessTime:     createdOn,
+		CreatedOn:      createdOn,
+		CreatedBy:      userID,
 	}
 
-	if err == nil {
-		s.AccessTime = createdOn
-		s.ModifiedOn = createdOn
-		s.ModifiedBy = userID
-		if err := tx.Save(&s).Error; err != nil {
-			return nil, err
-		}
-		return &s, nil
+	if err := tx.Create(&s).Error; err != nil {
+		return nil, err
 	}
+
 	return &s, nil
 }
 
@@ -464,55 +461,132 @@ func (r *AssessmentRepositoryImpl) GetCertificateDetailsBySessionId(sessionId st
 	return &details, nil
 }
 
-func (r *AssessmentRepositoryImpl) SaveAssessmentResponse(tx *gorm.DB, session *models.AssessmentUserSession, assessmentSeq string, response models.UserResponse) error {
-	currentTime := time.Now()
-	for _, id := range response.SelectedOptionID {
-		var selectedOption models.OptionMst
-		if err := tx.Where("option_id = ? AND question_id = ?", id, response.QuestionID).First(&selectedOption).Error; err != nil {
-			return err
-		}
+func (r *AssessmentRepositoryImpl) SaveAssessmentResponse(
+	tx *gorm.DB,
+	session *models.AssessmentUserSession,
+	assessmentSeq string,
+	response models.UserResponse,
+) error {
 
-		result := models.AssessmentResult{
-			CreatedOn:           currentTime,
-			IsActive:            true,
-			IsDeleted:           false,
-			ModifiedOn:          currentTime,
-			ActivityID:          1,
-			AssessmentSequence:  assessmentSeq,
-			AssessmentSessionID: session.SessionID.String(),
-			AttemptID:           0,
-			AttemptOptionID:     id,
-			QuestionID:          response.QuestionID,
-			AttemptEndTime:      &currentTime,
-			AttemptStartTime:    &currentTime,
-			PointAssigned:       int64(selectedOption.AnswerScore),
-		}
-		if err := tx.Create(&result).Error; err != nil {
-			return err
-		}
-	}
-	if err := tx.Model(&models.AssessmentUserSession{}).
-		Where("session_id = ?", session.SessionID).
-		Updates(map[string]interface{}{
-			"is_active":   false,
-			"modified_on": currentTime,
-		}).Error; err != nil {
+	currentTime := time.Now()
+
+	// 1️⃣ Get correct options
+	var correctOptions []models.OptionMst
+	if err := tx.Where(
+		"question_id = ? AND is_answer = true",
+		response.QuestionID,
+	).Find(&correctOptions).Error; err != nil {
 		return err
 	}
+
+	// 2️⃣ Convert correct options to map
+	correctMap := make(map[int64]bool)
+	for _, opt := range correctOptions {
+		correctMap[opt.OptionID] = true
+	}
+
+	// 3️⃣ Convert selected options to map
+	selectedMap := make(map[int64]bool)
+	for _, id := range response.SelectedOptionID {
+		selectedMap[id] = true
+	}
+
+	// 4️⃣ Compare maps
+	isCorrect := true
+
+	if len(correctMap) != len(selectedMap) {
+		isCorrect = false
+	} else {
+		for id := range correctMap {
+			if !selectedMap[id] {
+				isCorrect = false
+				break
+			}
+		}
+	}
+
+	// 5️⃣ Get assessment-level marks
+	var mapping models.AssessmentQuestionMst
+	if err := tx.Where(
+		"assessment_sequence = ? AND question_id = ?",
+		assessmentSeq,
+		response.QuestionID,
+	).First(&mapping).Error; err != nil {
+		return err
+	}
+
+	var points int64 = 0
+	if isCorrect {
+		points = mapping.CorrectPoints
+	}
+
+	// 6️⃣ Convert selected option IDs to comma string
+	selectedIDs := ""
+	if len(response.SelectedOptionID) > 0 {
+		var ids []string
+		for _, id := range response.SelectedOptionID {
+			ids = append(ids, fmt.Sprintf("%d", id))
+		}
+		selectedIDs = strings.Join(ids, ",")
+	}
+
+	// 🔥 7️⃣ Delete existing record for this session + question (prevent duplicates)
+	if err := tx.Exec(`
+		DELETE FROM assessment_result
+		WHERE assessment_session_id = ?
+		AND question_id = ?
+	`, session.SessionID.String(), response.QuestionID).Error; err != nil {
+		return err
+	}
+
+	// 8️⃣ Insert fresh row
+	result := models.AssessmentResult{
+		CreatedOn:           currentTime,
+		IsActive:            true,
+		IsDeleted:           false,
+		ModifiedOn:          currentTime,
+		ActivityID:          1,
+		AssessmentSequence:  assessmentSeq,
+		AssessmentSessionID: session.SessionID.String(),
+		AttemptID:           0,
+		AttemptOptionID:     0,
+		QuestionID:          response.QuestionID,
+		AttemptEndTime:      &currentTime,
+		AttemptStartTime:    &currentTime,
+		PointAssigned:       points,
+		SelectedOptionIDs:   selectedIDs,
+		CreatedBy:           session.UserID,
+	}
+
+	if err := tx.Create(&result).Error; err != nil {
+		return err
+	}
+
 	return nil
 }
 
-func (r *AssessmentRepositoryImpl) UpdateAssessmentStatus(tx *gorm.DB, userID, assessmentID, status string) (*models.AssessmentStatus, error) {
+func (r *AssessmentRepositoryImpl) UpdateAssessmentStatus(
+	tx *gorm.DB,
+	userID,
+	assessmentID,
+	status string,
+) (*models.AssessmentStatus, error) {
+
 	var st models.AssessmentStatus
 
-	err := tx.Where("user_id = ? AND assessment_id = ?", userID, assessmentID).
-		First(&st).Error
+	err := tx.Where(
+		"user_id = ? AND assessment_id = ?",
+		userID,
+		assessmentID,
+	).First(&st).Error
 
+	// 🆕 If record does NOT exist → create using given status
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+
 		st = models.AssessmentStatus{
 			UserID:           userID,
 			AssessmentID:     assessmentID,
-			AssessmentStatus: status,
+			AssessmentStatus: status, // 🔥 USE PARAMETER
 			CreatedOn:        time.Now(),
 			CreatedBy:        userID,
 			IsActive:         true,
@@ -520,15 +594,28 @@ func (r *AssessmentRepositoryImpl) UpdateAssessmentStatus(tx *gorm.DB, userID, a
 			ModifiedOn:       time.Now(),
 			ModifiedBy:       userID,
 		}
+
 		return &st, tx.Create(&st).Error
 	}
-	err = tx.Model(&st).Where("id = ?", st.ID).
-		Updates(map[string]interface{}{
-			"assessment_status": status,
-		}).Error
+
 	if err != nil {
 		return nil, err
 	}
+
+	// 🔥 If exists → update using given status
+	err = tx.Model(&st).
+		Updates(map[string]interface{}{
+			"assessment_status": status, // 🔥 USE PARAMETER
+			"modified_on":       time.Now(),
+			"modified_by":       userID,
+		}).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	st.AssessmentStatus = status
+
 	return &st, nil
 }
 
@@ -1235,7 +1322,16 @@ func (r *AssessmentRepositoryImpl) CreateAssessmentExt(ctx context.Context, tx *
 	return ext, nil
 }
 
-func (r *AssessmentRepositoryImpl) CreateAssessmentQuestions(ctx context.Context, tx *gorm.DB, assessmentID int64, assessmentSequence string, questionIDs []int64, createdBy string) error {
+func (r *AssessmentRepositoryImpl) CreateAssessmentQuestions(
+	ctx context.Context,
+	tx *gorm.DB,
+	assessmentID int64,
+	assessmentSequence string,
+	questionIDs []int64,
+	createdBy string,
+	marksPerQuestion int64,
+
+) error {
 
 	for idx, qID := range questionIDs {
 
@@ -1247,7 +1343,7 @@ func (r *AssessmentRepositoryImpl) CreateAssessmentQuestions(ctx context.Context
 			ModifiedOn:         time.Now(),
 			ModifiedBy:         createdBy,
 			AssessmentSequence: assessmentSequence,
-			CorrectPoints:      1,
+			CorrectPoints:      marksPerQuestion, // 🔥 FIXED
 			DurationInSeconds:  0,
 			NegativePoints:     0,
 			QuestionID:         qID,
@@ -2009,4 +2105,98 @@ func (r *AssessmentRepositoryImpl) SaveVoice(
 		userID,
 		sessionID,
 	).Error
+}
+
+func (r *AssessmentRepositoryImpl) GetAdminAssessmentUserResult(
+	assessmentSeq string,
+	userId string,
+) ([]map[string]interface{}, error) {
+
+	query := `
+SELECT 
+    ar.assessment_session_id,
+    aus.created_on AS session_created_on,
+
+    ar.question_id,
+    cq.value AS question_text,
+
+    STRING_AGG(DISTINCT co.value, ', ') AS selected_option,
+
+    correct_opt.correct_options AS correct_option,
+
+    ar.point_assigned,
+    ar.bonus_point_assigned,
+    ar.attempt_count,
+    ar.attempt_time,
+    aq.correct_points,
+    aq.negative_points
+
+FROM assessment_result ar
+
+JOIN assessment_user_session aus
+    ON ar.assessment_session_id::uuid = aus.session_id
+
+JOIN assessment_question_mst aq 
+    ON aq.question_id = ar.question_id 
+    AND aq.assessment_sequence = ar.assessment_sequence
+
+JOIN question_mst qm 
+    ON qm.question_id = ar.question_id
+
+JOIN content_mst cq 
+    ON cq.content_id = qm.content_id
+
+LEFT JOIN option_mst opt 
+    ON opt.option_id = ANY(string_to_array(ar.selected_option_ids, ',')::int[])
+
+LEFT JOIN content_mst co 
+    ON co.content_id = opt.content_id
+
+LEFT JOIN (
+    SELECT 
+        o.question_id,
+        STRING_AGG(c.value, ', ') AS correct_options
+    FROM option_mst o
+    JOIN content_mst c ON c.content_id = o.content_id
+    WHERE o.is_answer = true
+    GROUP BY o.question_id
+) correct_opt 
+    ON correct_opt.question_id = ar.question_id
+
+WHERE aus.assessment_id = ?
+AND aus.user_id = ?
+
+GROUP BY
+    ar.assessment_session_id,
+    aus.created_on,
+    ar.question_id,
+    cq.value,
+    correct_opt.correct_options,
+    ar.point_assigned,
+    ar.bonus_point_assigned,
+    ar.attempt_count,
+    ar.attempt_time,
+    aq.correct_points,
+    aq.negative_points
+
+ORDER BY aus.created_on ASC, ar.question_id ASC
+`
+	var results []map[string]interface{}
+
+	err := r.db.Raw(query, assessmentSeq, userId).Scan(&results).Error
+	return results, err
+}
+
+func (r *AssessmentRepositoryImpl) CheckUserAssignment(
+	assessmentSeq string,
+	userIDs []string,
+) ([]models.AssessmentStatus, error) {
+
+	var statuses []models.AssessmentStatus
+
+	err := r.db.
+		Where("assessment_id = ? AND user_id IN ?", assessmentSeq, userIDs).
+		Find(&statuses).Error
+
+	return statuses, err
 }

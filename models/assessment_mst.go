@@ -22,7 +22,7 @@ type AssessmentMst struct {
 	AssessmentSequence string     `gorm:"column:assessment_sequence"`
 	Duration           int64      `gorm:"column:duration"`
 	Marks              int64      `gorm:"column:marks"`
-	StartTime          *time.Time `gorm:"column:start_time"`
+	StartTime          *string    `gorm:"type:time"`
 	PartnerID          int64      `gorm:"column:partner_id"`
 	ValidFrom          *time.Time `gorm:"column:valid_from"`
 	ValidTo            *time.Time `gorm:"column:valid_to"`
