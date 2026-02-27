@@ -510,3 +510,20 @@ func (ac *AssessmentController) GetUserAssessmentResult(ctx *gin.Context) {
 
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "result", resp, nil, nil)
 }
+
+func (c *AssessmentController) DeleteAssessment(ctx *gin.Context) {
+	assessmentSeq := ctx.Param("id")
+
+	if assessmentSeq == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "assessment id required"})
+		return
+	}
+
+	err := c.assessmentService.DeleteAssessment(assessmentSeq)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Assessment deleted successfully"})
+}

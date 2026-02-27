@@ -84,10 +84,14 @@ func getAdminRoutes(adminController *controller.AdminController, assessmentContr
 		Route{"Admin", http.MethodPost, constant.AssessmentReport, assessmentController.DownloadAssessmentReport},
 
 		Route{"Admin", http.MethodPost, constant.JobDescription, adminController.CreateJobDescription},
+		Route{"Admin", http.MethodPut, constant.JobDescription, adminController.UpdateJobDescription},
+        Route{"Admin", http.MethodDelete, constant.JobDescription + "/:id", adminController.DeleteJobDescription},
         Route{"Admin", http.MethodPost, constant.JobDescriptions, adminController.GetJobDescriptions},
 		Route{"Admin", http.MethodPost, constant.Question, adminController.CreateMultipleQuestions},
 		Route{"Admin", http.MethodPost, constant.AssessmentUserResult, adminController.GetAssessmentUserResult},
 		Route{"Admin", http.MethodPost, constant.CheckAssessmentAssignment, adminController.CheckAssessmentAssignment},
+		Route{"Admin", http.MethodDelete, constant.DeleteAssessment, assessmentController.DeleteAssessment},
+		Route{"Admin", http.MethodDelete, constant.DeleteUser, adminController.DeleteUser},
 
 
 

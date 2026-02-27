@@ -80,6 +80,7 @@ type AssessmentRepository interface {
 	SaveVoice(assessmentSeq string, userID string, sessionID string, voiceData []byte) error
 	GetAdminAssessmentUserResult(assessmentSeq string, userId string) ([]map[string]interface{}, error)
 	CheckUserAssignment(assessmentSeq string, userIDs []string) ([]models.AssessmentStatus, error)
+	DeleteAssessment(assessmentSeq string) error
 }
 
 type AssessmentRepositoryImpl struct {
@@ -2199,4 +2200,68 @@ func (r *AssessmentRepositoryImpl) CheckUserAssignment(
 		Find(&statuses).Error
 
 	return statuses, err
+}
+
+func (r *AssessmentRepositoryImpl) DeleteAssessment(assessmentSeq string) error {
+	tx := r.db.Begin()
+
+	result := tx.Model(&models.AssessmentMst{}).
+		Where("assessment_sequence = ? AND is_deleted = false", assessmentSeq).
+		Updates(map[string]interface{}{
+			"is_deleted":  true,
+			"is_active":   false,
+			"modified_on": time.Now(),
+		})
+
+	if result.Error != nil {
+		tx.Rollback()
+		return result.Error
+	}
+
+	if result.RowsAffected == 0 {
+		tx.Rollback()
+		return errors.New("assessment not found")
+	}
+
+	// 2️⃣ Soft delete assessment_status
+	if err := tx.Model(&models.AssessmentStatus{}).
+		Where("assessment_id = ?", assessmentSeq).
+		Updates(map[string]interface{}{
+			"is_deleted": true,
+			"is_active":  false,
+		}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Model(&models.AssessmentUserSession{}).
+		Where("assessment_id = ?", assessmentSeq).
+		Updates(map[string]interface{}{
+			"is_deleted": true,
+			"is_active":  false,
+		}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	// 4️⃣ HARD delete tables that may not use soft delete
+	if err := tx.Where("assessment_sequence = ?", assessmentSeq).
+		Delete(&models.AssessmentTagMapping{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Where("assessment_sequence = ?", assessmentSeq).
+		Delete(&models.DhlSurveySurveyExt{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := tx.Where("assessment_sequence = ?", assessmentSeq).
+		Delete(&models.AssessmentQuestionMst{}).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit().Error
 }

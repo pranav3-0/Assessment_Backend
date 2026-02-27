@@ -7,6 +7,7 @@ import (
 	"dhl/utils"
 	"log"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -321,6 +322,45 @@ func (ac *AdminController) GetJobDescriptions(ctx *gin.Context) {
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "job_descriptions", jobs, pagination, nil)
 }
 
+func (c *AdminController) UpdateJobDescription(ctx *gin.Context) {
+
+	var job models.JobDescription
+
+	if err := ctx.ShouldBindJSON(&job); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	userID := ctx.GetString("user_id") 
+
+	if err := c.jobService.UpdateJob(job, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Job updated successfully"})
+}
+
+func (c *AdminController) DeleteJobDescription(ctx *gin.Context) {
+
+	jobIDParam := ctx.Param("id")
+
+	jobID, err := strconv.ParseInt(jobIDParam, 10, 64)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid job id"})
+		return
+	}
+
+	userID := ctx.GetString("user_id")
+
+	if err := c.jobService.DeleteJob(jobID, userID); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Job deleted successfully"})
+}
+
 func (ac *AdminController) CreateMultipleQuestions(ctx *gin.Context) {
 
     var req models.CreateQuestionsRequest
@@ -386,4 +426,21 @@ func (uc *AdminController) CheckAssessmentAssignment(ctx *gin.Context) {
 	}
 
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "assignment_status", resp, nil, nil)
+}
+
+func (uc *AdminController) DeleteUser(ctx *gin.Context) {
+
+	userIDStr := ctx.Query("id")
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusBadRequest, "Invalid user ID", nil, err)
+		return
+	}
+
+	if err := uc.userService.DeleteUser(userID); err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusInternalServerError, "Failed to delete user", nil, err)
+		return
+	}
+
+	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "User deleted successfully", nil, nil, nil)
 }

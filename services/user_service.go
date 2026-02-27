@@ -23,6 +23,7 @@ type UserService interface {
 	GetAllUsers(limit, offset int, role *string, highestRole, userId string) ([]models.UserFullData, int64, error)
 	MigrateUsersToKeycloak(userIds []*string) error
 	MigrateRoleToKeycloak(roles []string)
+	DeleteUser(userID uuid.UUID) error
 }
 
 type UserServiceImpl struct {
@@ -59,7 +60,11 @@ func (us *UserServiceImpl) UpdateUserProfile(userID uuid.UUID, data models.UserP
 	if user.AuthUserID == "" {
 		return fmt.Errorf("missing Keycloak user ID for %s", userID)
 	}
-
+	if data.UserType != nil {
+		if *data.UserType != "kid" && *data.UserType != "candidate" {
+			return fmt.Errorf("invalid user_type")
+		}
+	}
 	userPayload := map[string]interface{}{
 		"firstName": getIfNotNil(data.FirstName),
 		"lastName":  getIfNotNil(data.LastName),
@@ -191,4 +196,8 @@ func getIfNotNil(v *string) string {
 		return ""
 	}
 	return *v
+}
+
+func (us *UserServiceImpl) DeleteUser(userID uuid.UUID) error {
+	return us.userRepo.DeleteUser(userID)
 }

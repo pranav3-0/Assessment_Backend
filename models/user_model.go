@@ -107,6 +107,7 @@ type UserProfileUpdate struct {
 	Password      *string  `json:"password,omitempty"`
 	CompanyID     *int     `json:"company_id,omitempty"`
 	Karma         *int     `json:"karma,omitempty"`
+	UserType      *string  `json:"user_type,omitempty"`  
 	RankID        *int     `json:"rank_id,omitempty"`
 	TeamLead      *string  `json:"team_lead,omitempty"`
 	Manager       *string  `json:"manager,omitempty"`

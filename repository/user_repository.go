@@ -23,6 +23,7 @@ type UserRepository interface {
 	FetchAllUsersWithExtPaginated(offset, limit int, role *string) ([]models.UserFullData, int64, error)
 	FetchUsersManagedBy(offset, limit int, managerID string, role *string) ([]models.UserFullData, int64, error)
 	FetchAllUsers(userIds []*string) ([]models.UserWithRoles, error)
+	DeleteUser(userID uuid.UUID) error
 }
 
 type UserRepositoryImpl struct {
@@ -169,6 +170,10 @@ func (r *UserRepositoryImpl) UpdateUserProfile(userID uuid.UUID, data models.Use
 	if data.NotifyId != nil {
 		userUpdates["notify_id"] = *data.NotifyId
 	}
+	if data.UserType != nil {
+		userUpdates["user_type"] = *data.UserType
+	}
+
 	userUpdates["updated_at"] = time.Now()
 	if len(userUpdates) > 0 {
 		if err := tx.Table("public.assessment_user_mst").
@@ -358,16 +363,24 @@ func (r *UserRepositoryImpl) FetchAllUsers(userIds []*string) ([]models.UserWith
 func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, role *string) ([]models.UserFullData, int64, error) {
 	var total int64
 
-	// Step 1: Count total users
-	countQuery := `SELECT COUNT(*) FROM public.assessment_user_mst u`
+	
+	countQuery := `
+		SELECT COUNT(*) 
+		FROM public.assessment_user_mst u
+		WHERE u.is_active = true
+	`
+
 	var countParams []interface{}
+
 	if role != nil && *role != "" {
-		countQuery += ` 
-		WHERE EXISTS (
+		countQuery += `
+		AND EXISTS (
 			SELECT 1 
 			FROM public.assessment_user_role_mapping m
-			JOIN public.assessment_user_role_mst r ON m.role_id = r.role_id
-			WHERE u.user_id = m.user_id AND r.role_label ILIKE ?
+			JOIN public.assessment_user_role_mst r 
+				ON m.role_id = r.role_id
+			WHERE u.user_id = m.user_id 
+			AND r.role_label ILIKE ?
 		)`
 		countParams = append(countParams, "%"+*role+"%")
 	}
@@ -376,84 +389,104 @@ func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, ro
 		return nil, 0, err
 	}
 
-	// Step 2: Main query — with role condition if provided
-	query := `SELECT u.user_id, u.first_name, u.last_name, u.email, u.phone, u.username,u.user_type, ext.company_id,
-	
-		ext.karma, ext.rank_id, ext.team_lead, ext.manager, ext.senior_manager, ext.sdl, ext.sll, ext.user_map, ext.emp_code,
-		ext.center, ext.selection_type,	COALESCE(string_agg(DISTINCT r.role_label, ','), '') AS roles
-	FROM 
-		public.assessment_user_mst u
-	LEFT JOIN 
-		public.dhl_assessment_user_mst_ext ext 
-		ON u.user_id::text = ext.user_id
-	LEFT JOIN 
-		public.assessment_user_role_mapping m 
-		ON u.user_id = m.user_id
-	LEFT JOIN 
-		public.assessment_user_role_mst r 
-		ON m.role_id = r.role_id
+	query := `
+		SELECT 
+			u.user_id,
+			u.first_name,
+			u.last_name,
+			u.email,
+			u.phone,
+			u.username,
+			u.user_type,
+			ext.company_id,
+			ext.karma,
+			ext.rank_id,
+			ext.team_lead,
+			ext.manager,
+			ext.senior_manager,
+			ext.sdl,
+			ext.sll,
+			ext.user_map,
+			ext.emp_code,
+			ext.center,
+			ext.selection_type,
+			COALESCE(string_agg(DISTINCT r.role_label, ','), '') AS roles
+		FROM public.assessment_user_mst u
+		LEFT JOIN public.dhl_assessment_user_mst_ext ext 
+			ON u.user_id::text = ext.user_id
+		LEFT JOIN public.assessment_user_role_mapping m 
+			ON u.user_id = m.user_id
+		LEFT JOIN public.assessment_user_role_mst r 
+			ON m.role_id = r.role_id
+		WHERE u.is_active = true
 	`
-	// Apply role filter if provided
+
+	var params []interface{}
+
 	if role != nil && *role != "" {
-		query += ` WHERE r.role_label ILIKE ?`
+		query += ` AND r.role_label ILIKE ?`
+		params = append(params, "%"+*role+"%")
 	}
 
-	// Group by user fields
 	query += `
-	GROUP BY 
-		u.user_id, u.user_type, ext.company_id, ext.karma, ext.rank_id, ext.team_lead, ext.manager,
-		ext.senior_manager, ext.sdl, ext.sll, ext.user_map, ext.emp_code,
-		ext.center, ext.selection_type
-	ORDER BY u.created_at DESC
-	LIMIT ? OFFSET ?;
+		GROUP BY 
+			u.user_id,
+			u.first_name,
+			u.last_name,
+			u.email,
+			u.phone,
+			u.username,
+			u.user_type,
+			ext.company_id,
+			ext.karma,
+			ext.rank_id,
+			ext.team_lead,
+			ext.manager,
+			ext.senior_manager,
+			ext.sdl,
+			ext.sll,
+			ext.user_map,
+			ext.emp_code,
+			ext.center,
+			ext.selection_type
+		ORDER BY u.created_at DESC
+		LIMIT ? OFFSET ?
 	`
 
-	// Parameters for query
-	params := []interface{}{
-		"%" + *role + "%",
-		limit,
-		offset,
-	}
+	params = append(params, limit, offset)
 
-	if role == nil || *role == "" {
-		params = []interface{}{
-			limit,
-			offset,
-		}
-	}
 
-	// Step 3: Temporary struct for scanning
 	type userRow struct {
-		UserID        string  `json:"user_id"`
-		FirstName     string  `json:"first_name"`
-		LastName      string  `json:"last_name"`
-		Email         string  `json:"email"`
-		Phone         string  `json:"phone"`
-		Username      string  `json:"username"`
-		CompanyID     *int    `json:"company_id"`
-		Karma         *int    `json:"karma"`
-		RankID        *int    `json:"rank_id"`
-		TeamLead      *string `json:"team_lead"`
-		Manager       *string `json:"manager"`
-		SeniorManager *string `json:"senior_manager"`
-		SDL           *string `json:"sdl"`
-		SLL           *string `json:"sll"`
-		UserMap       *string `json:"user_map"`
-		EmpCode       *string `json:"emp_code"`
-		Center        *int    `json:"center"`
-		SelectionType *string `json:"selection_type"`
-		Roles         string  `json:"roles"`
-		UserType      string  `json:"user_type"`
+		UserID        string
+		FirstName     string
+		LastName      string
+		Email         string
+		Phone         string
+		Username      string
+		CompanyID     *int
+		Karma         *int
+		RankID        *int
+		TeamLead      *string
+		Manager       *string
+		SeniorManager *string
+		SDL           *string
+		SLL           *string
+		UserMap       *string
+		EmpCode       *string
+		Center        *int
+		SelectionType *string
+		Roles         string
+		UserType      string
 	}
 
 	var rows []userRow
 	if err := r.db.Raw(query, params...).Scan(&rows).Error; err != nil {
-		log.Println("Error fetching users:", err)
 		return nil, 0, err
 	}
 
-	// Step 4: Convert to []models.UserFullData
+
 	var users []models.UserFullData
+
 	for _, row := range rows {
 		user := models.UserFullData{
 			UserID:        uuid.MustParse(row.UserID),
@@ -482,6 +515,7 @@ func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, ro
 		} else {
 			user.Roles = []string{}
 		}
+
 		users = append(users, user)
 	}
 
@@ -611,4 +645,31 @@ func (r *UserRepositoryImpl) FetchUsersManagedBy(offset, limit int, managerID st
 	}
 
 	return users, total, nil
+}
+
+func (r *UserRepositoryImpl) DeleteUser(userID uuid.UUID) error {
+	tx := r.db.Begin()
+
+	// 1️⃣ Soft delete main user
+	if err := tx.Table("public.assessment_user_mst").
+		Where("user_id = ?", userID).
+		Updates(map[string]interface{}{
+			"is_active":  false,
+			"updated_at": time.Now(),
+		}).Error; err != nil {
+
+		tx.Rollback()
+		return err
+	}
+
+	// 2️⃣ Remove role mappings
+	if err := tx.Table("public.assessment_user_role_mapping").
+		Where("user_id = ?", userID).
+		Delete(nil).Error; err != nil {
+
+		tx.Rollback()
+		return err
+	}
+
+	return tx.Commit().Error
 }

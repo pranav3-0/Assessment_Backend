@@ -47,6 +47,7 @@ type AssessmentService interface {
 	StartAssessment(userID, assessmentSequence string) (string, error)
 	GetAdminAssessmentUserResult(assessmentSeq string, userId string) (*models.AdminAssessmentUserResultResponse, error)
 	CheckUserAssignment(assessmentSeq string, userIDs []string) ([]models.CheckAssignmentResponse, error)
+	DeleteAssessment(assessmentSeq string) error
 }
 
 type AssessmentServiceImpl struct {
@@ -1399,4 +1400,8 @@ func (s *AssessmentServiceImpl) CheckUserAssignment(
 	}
 
 	return response, nil
+}
+
+func (s *AssessmentServiceImpl) DeleteAssessment(assessmentSeq string) error {
+	return s.assessmentRepo.DeleteAssessment(assessmentSeq)
 }
