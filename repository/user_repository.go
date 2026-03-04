@@ -24,12 +24,21 @@ type UserRepository interface {
 	FetchUsersManagedBy(offset, limit int, managerID string, role *string) ([]models.UserFullData, int64, error)
 	FetchAllUsers(userIds []*string) ([]models.UserWithRoles, error)
 	DeleteUser(userID uuid.UUID) error
+	 GetUserSkills(userID string) ([]string, error)
+	GetUserAverageScore(userID string) (float64, error)
+	GetUserGlobalRank(userID string) (int, error)
+	GetUserAchievements(userID string) ([]string, error)
+	GetUserPerformance(userID string) (PerformanceSummary, error)
 }
 
 type UserRepositoryImpl struct {
 	db *gorm.DB
 }
 
+type PerformanceSummary struct {
+	TotalObtained float64 `gorm:"column:total_obtained"`
+	TotalPossible float64 `gorm:"column:total_possible"`
+}
 func NewUserRepository(db *gorm.DB) UserRepository {
 	if db == nil {
 		panic("database instance is null")
@@ -672,4 +681,121 @@ func (r *UserRepositoryImpl) DeleteUser(userID uuid.UUID) error {
 	}
 
 	return tx.Commit().Error
+}
+
+func (r *UserRepositoryImpl) GetUserSkills(userID string) ([]string, error) {
+	var skills []string
+
+	query := `
+	SELECT DISTINCT TRIM(t.tag)
+	FROM assessment_user_session s
+	JOIN assessment_tag_mapping atm 
+		ON s.assessment_id = atm.assessment_sequence
+	JOIN tag_mst t 
+		ON atm.tag_id = t.tag_id
+	WHERE s.user_id = ?
+	  AND s.is_deleted = false
+	  AND t.is_deleted = false
+	`
+
+	err := r.db.Raw(query, userID).Scan(&skills).Error
+	return skills, err
+}
+
+func (r *UserRepositoryImpl) GetUserPerformance(userID string) (PerformanceSummary, error) {
+	var result PerformanceSummary
+
+	query := `
+	SELECT 
+		COALESCE(SUM(r.point_assigned),0) AS total_obtained,
+		COALESCE(SUM(q.correct_points),0) AS total_possible
+	FROM assessment_result r
+	JOIN assessment_question_mst q 
+		ON r.question_id = q.question_id
+	JOIN assessment_user_session s 
+		ON s.assessment_id = r.assessment_sequence
+	WHERE s.user_id = ?
+	  AND s.is_deleted = false
+	  AND r.is_deleted = false
+	`
+
+	err := r.db.Raw(query, userID).Scan(&result).Error
+	return result, err
+}
+
+func (r *UserRepositoryImpl) GetUserAverageScore(userID string) (float64, error) {
+	var avg float64
+
+	query := `
+	SELECT COALESCE(AVG(total_score),0) FROM (
+		SELECT s.assessment_id,
+			   SUM(r.point_assigned) AS total_score
+		FROM assessment_user_session s
+		JOIN assessment_result r 
+			ON s.assessment_id = r.assessment_sequence
+		WHERE s.user_id = ?
+		  AND s.is_deleted = false
+		  AND r.is_deleted = false
+		GROUP BY s.assessment_id
+	) sub;
+	`
+
+	err := r.db.Raw(query, userID).Scan(&avg).Error
+	return avg, err
+}
+
+func (r *UserRepositoryImpl) GetUserGlobalRank(userID string) (int, error) {
+	var rank int
+
+	query := `
+	SELECT COALESCE(MIN(rank),0)
+	FROM leader_board
+	WHERE session_id IN (
+		SELECT session_id
+		FROM assessment_user_session
+		WHERE user_id = ?
+	)
+	`
+
+	err := r.db.Raw(query, userID).Scan(&rank).Error
+	return rank, err
+}
+
+func (r *UserRepositoryImpl) GetUserAchievements(userID string) ([]string, error) {
+
+	var achievements []string
+
+	// 1️⃣ Perfect Score Check
+	var perfectCount int64
+	perfectQuery := `
+	SELECT COUNT(*) FROM (
+		SELECT s.assessment_id
+		FROM assessment_user_session s
+		JOIN assessment_result r 
+			ON s.assessment_id = r.assessment_sequence
+		JOIN assessment_question_mst q
+			ON r.question_id = q.question_id
+		WHERE s.user_id = ?
+		GROUP BY s.assessment_id
+		HAVING SUM(r.point_assigned) = SUM(q.correct_points)
+	) sub;
+	`
+
+	r.db.Raw(perfectQuery, userID).Scan(&perfectCount)
+
+	if perfectCount > 0 {
+		achievements = append(achievements, "Perfect Score Achiever")
+	}
+
+	// 2️⃣ Total Attempts Check
+	var attemptCount int64
+	r.db.Table("assessment_user_session").
+		Where("user_id = ?", userID).
+		Count(&attemptCount)
+
+	if attemptCount >= 5 {
+		achievements = append(achievements, "Consistent Performer")
+	}
+
+	return achievements, nil
 }

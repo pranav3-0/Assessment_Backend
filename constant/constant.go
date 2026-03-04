@@ -57,6 +57,7 @@ const (
 	AssessmentUserResult        = "/assessment-user-result"
 	AssessmentResultView        = "/assessment-result"
 	CheckAssessmentAssignment   = "/assessment/check-assignment"
+	Dashboard                   = "/dashboard"
 )
 
 type UserRole string

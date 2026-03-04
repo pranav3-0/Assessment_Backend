@@ -4,7 +4,7 @@ import (
 	"dhl/models"
 	"dhl/repository"
 	"time"
-
+	"fmt"
 	"gorm.io/gorm"
 )
 
@@ -17,11 +17,13 @@ DeleteJob(jobID int64, modifiedBy string) error
 
 type JobDescriptionServiceImpl struct {
 	repo repository.JobDescriptionRepository
+	activityRepo repository.ActivityRepository
 	db   *gorm.DB
 }
 
-func NewJobDescriptionService(repo repository.JobDescriptionRepository, db *gorm.DB) JobDescriptionService {
-	return &JobDescriptionServiceImpl{repo: repo, db: db}
+func NewJobDescriptionService(repo repository.JobDescriptionRepository, db *gorm.DB,activityRepo repository.ActivityRepository,
+) JobDescriptionService {
+	return &JobDescriptionServiceImpl{repo: repo, db: db, activityRepo: activityRepo}
 }
 
 func (s *JobDescriptionServiceImpl) CreateJob(job models.JobDescription, createdBy string) error {
@@ -40,7 +42,16 @@ func (s *JobDescriptionServiceImpl) CreateJob(job models.JobDescription, created
 		return err
 	}
 
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+	return err
+}
+
+_ = s.activityRepo.LogActivity(
+	20, // JD Created
+	job.Title,
+)
+
+return nil
 }
 
 func (s *JobDescriptionServiceImpl) GetJobs(limit, offset int) ([]models.JobDescription, int64, error) {
@@ -69,7 +80,16 @@ func (s *JobDescriptionServiceImpl) UpdateJob(job models.JobDescription, modifie
 		return err
 	}
 
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+	return err
+}
+
+_ = s.activityRepo.LogActivity(
+	21, // JD Updated
+	existing.Title,
+)
+
+return nil
 }
 
 func (s *JobDescriptionServiceImpl) DeleteJob(jobID int64, modifiedBy string) error {
@@ -81,5 +101,14 @@ func (s *JobDescriptionServiceImpl) DeleteJob(jobID int64, modifiedBy string) er
 		return err
 	}
 
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+	return err
+}
+
+_ = s.activityRepo.LogActivity(
+	22, // JD Deleted
+	fmt.Sprintf("JD ID: %d", jobID),
+)
+
+return nil
 }

@@ -17,36 +17,82 @@ import (
 type UserService interface {
 	FindUserIdBySub(sub string) (string, error)
 	UpdateUserProfile(userID uuid.UUID, data models.UserProfileUpdate) error
-	GetUserProfile(userID string) (*models.AssessmentUser, error)
+	GetUserProfile(userID string) (*models.UserProfileResponse, error)
 	MapUsersToManager(request models.MapUsersToManagerRequest, creator string) error
 
 	GetAllUsers(limit, offset int, role *string, highestRole, userId string) ([]models.UserFullData, int64, error)
 	MigrateUsersToKeycloak(userIds []*string) error
 	MigrateRoleToKeycloak(roles []string)
 	DeleteUser(userID uuid.UUID) error
+
+	
 }
 
 type UserServiceImpl struct {
 	userRepo   repository.UserRepository
 	clientRepo repository.ClientRepository
+	activityRepo repository.ActivityRepository
 	db         *gorm.DB
 }
 
-func NewUserService(userRepo repository.UserRepository, clientRepo repository.ClientRepository, db *gorm.DB) UserService {
-	return &UserServiceImpl{userRepo: userRepo, clientRepo: clientRepo, db: db}
+func NewUserService(userRepo repository.UserRepository, clientRepo repository.ClientRepository, db *gorm.DB,activityRepo repository.ActivityRepository,) UserService {
+	return &UserServiceImpl{userRepo: userRepo, clientRepo: clientRepo, db: db, activityRepo: activityRepo}
 }
 
 func (us *UserServiceImpl) FindUserIdBySub(sub string) (string, error) {
 	return us.userRepo.FindUserIdBySub(sub)
 }
 
-func (us *UserServiceImpl) GetUserProfile(userID string) (*models.AssessmentUser, error) {
+func (us *UserServiceImpl) GetUserProfile(userID string) (*models.UserProfileResponse, error) {
+
 	user, err := us.userRepo.FindByUserId(userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch user: %w", err)
+		return nil, err
 	}
-	return &user, nil
+
+	skills, _ := us.userRepo.GetUserSkills(userID)
+
+	performance, _ := us.userRepo.GetUserPerformance(userID)
+
+	var avgMarks float64
+	var percentage float64
+
+	if performance.TotalPossible > 0 {
+		percentage = (float64(performance.TotalObtained) / float64(performance.TotalPossible)) * 100
+
+		// safety cap
+		if percentage > 100 {
+			percentage = 100
+		}
+	}
+
+	var attemptCount int64
+	us.db.Table("assessment_user_session").
+		Where("user_id = ?", userID).
+		Count(&attemptCount)
+
+	if attemptCount > 0 {
+		avgMarks = float64(performance.TotalObtained) / float64(attemptCount)
+	}
+
+	achievements, _ := us.userRepo.GetUserAchievements(userID)
+
+	response := &models.UserProfileResponse{
+		UserID:            user.UserID,
+		FirstName:         user.FirstName,
+		LastName:          user.LastName,
+		Email:             user.Email,
+		Phone:             user.Phone,
+		UserType:          user.UserType,
+		Skills:            skills,
+		AverageMarks:      avgMarks,
+		AveragePercentage: percentage,
+		Achievements:      achievements,
+	}
+
+	return response, nil
 }
+
 
 func (us *UserServiceImpl) UpdateUserProfile(userID uuid.UUID, data models.UserProfileUpdate) error {
 	err := us.userRepo.UpdateUserProfile(userID, data)
@@ -80,10 +126,16 @@ func (us *UserServiceImpl) UpdateUserProfile(userID uuid.UUID, data models.UserP
 
 	keycloakService := NewKeycloakService(client.AuthConfig)
 	err = keycloakService.UpdateUserInKeycloak(user.AuthUserID, userPayload, data.Roles)
-	if err != nil {
-		return fmt.Errorf("keycloak sync failed: %w", err)
-	}
-	return nil
+if err != nil {
+	return fmt.Errorf("keycloak sync failed: %w", err)
+}
+
+_ = us.activityRepo.LogActivity(
+	12, // User Updated
+	user.Email,
+)
+
+return nil
 }
 
 func (us *UserServiceImpl) MapUsersToManager(request models.MapUsersToManagerRequest, creator string) error {
@@ -107,6 +159,10 @@ func (us *UserServiceImpl) MapUsersToManager(request models.MapUsersToManagerReq
 	if err := tx.Commit().Error; err != nil {
 		return err
 	}
+	_ = us.activityRepo.LogActivity(
+	14, // Users Mapped To Manager
+	request.ManagerID,
+)
 	return nil
 }
 
@@ -199,5 +255,15 @@ func getIfNotNil(v *string) string {
 }
 
 func (us *UserServiceImpl) DeleteUser(userID uuid.UUID) error {
-	return us.userRepo.DeleteUser(userID)
+	err := us.userRepo.DeleteUser(userID)
+	if err != nil {
+		return err
+	}
+
+	_ = us.activityRepo.LogActivity(
+		11, // User Deleted
+		userID.String(),
+	)
+
+	return nil
 }

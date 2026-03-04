@@ -16,6 +16,7 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	var clientRepo = repository.NewClientRepository(db)
 	var assessmentRepo = repository.NewAssessmentRepository(db)
 	var contactRepo = repository.NewContactRepository(db)
+	var activityRepo = repository.NewActivityRepository(db)
 	var dhlBusinessPartnerRepository = repository.NewDHLBusinessPartnerRepository(db)
 	var dhlCenterRepository = repository.NewDHLCenterRepository(db)
 	var dhlResCompanyRepository = repository.NewDHLResCompanyRepository(db)
@@ -27,13 +28,12 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	var dhlSubServiceRepository = repository.NewDHLSubServiceRepository(db)
 
 	var jobRepo = repository.NewJobDescriptionRepository(db)
-    var jobService = services.NewJobDescriptionService(jobRepo, db)
+	var jobService = services.NewJobDescriptionService(jobRepo, db,activityRepo)
 	var questionRepo = repository.NewQuestionRepository(db)
-    var questionService = services.NewQuestionService(questionRepo, db, assessmentRepo)
+	var questionService = services.NewQuestionService(questionRepo, db, assessmentRepo)
 
-
-	var userService = services.NewUserService(userRepo, clientRepo, db)
-	var assessmentService = services.NewAssessmentService(assessmentRepo, db)
+	var userService = services.NewUserService(userRepo, clientRepo, db,activityRepo)
+	var assessmentService = services.NewAssessmentService(assessmentRepo, db,activityRepo)
 	var geminiService = services.NewGeminiService()
 	var contactService = services.NewContactService(contactRepo)
 	var dhlBusinessPartnerService = services.NewDHLBusinessPartnerService(dhlBusinessPartnerRepository)
@@ -48,9 +48,11 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	var dhlSubServiceService = services.NewDHLSubServiceService(dhlSubServiceRepository)
 	var notificationService = services.NewNotificationService(userRepo, assessmentRepo)
 	var authService = services.NewAuthService(userRepo, clientRepo, notificationService, db)
+	var dashboardRepo = repository.NewDashboardRepository(db)
+	var dashboardService = services.NewDashboardService(dashboardRepo)
 
 	var userController = controller.NewUserController(userService, authService)
-	var adminController = controller.NewAdminController(userService, authService, assessmentService, notificationService, contactService,jobService, questionService)
+	var adminController = controller.NewAdminController(userService, authService, assessmentService, notificationService, contactService, jobService, questionService,dashboardService,)
 	var assessmentController = controller.NewAssessmentController(assessmentService, userService, geminiService)
 	var publicController = controller.NewPublicController(contactService)
 	var mastersController = controller.NewMastersController(dhlBusinessPartnerService, dhlCenterService, dhlResCompanyService,
@@ -63,7 +65,7 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	OpenRoutes(apiGroup, publicController, adminController)
 }
 
-func getAdminRoutes(adminController *controller.AdminController, assessmentController *controller.AssessmentController, mastersController *controller.MastersController,) Routes {
+func getAdminRoutes(adminController *controller.AdminController, assessmentController *controller.AssessmentController, mastersController *controller.MastersController) Routes {
 	return Routes{
 		Route{"Admin", http.MethodPost, constant.Assessments, adminController.GetAssessments},
 		Route{"Admin", http.MethodPost, constant.ManagerAssessments, adminController.GetManagerAssessments},
@@ -85,15 +87,14 @@ func getAdminRoutes(adminController *controller.AdminController, assessmentContr
 
 		Route{"Admin", http.MethodPost, constant.JobDescription, adminController.CreateJobDescription},
 		Route{"Admin", http.MethodPut, constant.JobDescription, adminController.UpdateJobDescription},
-        Route{"Admin", http.MethodDelete, constant.JobDescription + "/:id", adminController.DeleteJobDescription},
-        Route{"Admin", http.MethodPost, constant.JobDescriptions, adminController.GetJobDescriptions},
+		Route{"Admin", http.MethodDelete, constant.JobDescription + "/:id", adminController.DeleteJobDescription},
+		Route{"Admin", http.MethodPost, constant.JobDescriptions, adminController.GetJobDescriptions},
 		Route{"Admin", http.MethodPost, constant.Question, adminController.CreateMultipleQuestions},
 		Route{"Admin", http.MethodPost, constant.AssessmentUserResult, adminController.GetAssessmentUserResult},
 		Route{"Admin", http.MethodPost, constant.CheckAssessmentAssignment, adminController.CheckAssessmentAssignment},
 		Route{"Admin", http.MethodDelete, constant.DeleteAssessment, assessmentController.DeleteAssessment},
 		Route{"Admin", http.MethodDelete, constant.DeleteUser, adminController.DeleteUser},
-
-
+		Route{"Admin", http.MethodGet, constant.Dashboard, adminController.GetDashboard},
 
 		Route{"Contact Form", http.MethodPost, constant.ContactResponse, adminController.ListContactRespController},
 		// Master Routes
@@ -177,13 +178,11 @@ func getAssessmentRoutes(assessmentController *controller.AssessmentController) 
 		Route{"Assessment", http.MethodPost, constant.Assessments, assessmentController.GetUserAssessments},
 		Route{"Assessment", http.MethodPost, constant.Certificate, assessmentController.GetUserAssessmentCerficiate},
 		Route{"Assessment", http.MethodPost, constant.SessionImage, assessmentController.CreateSessionImage},
-		
 
 		Route{"Assessment", http.MethodPost, constant.AssessmentVerificationPhoto, assessmentController.UploadPhoto},
 		Route{"Assessment", http.MethodPost, constant.AssessmentVerificationVoice, assessmentController.UploadVoice},
 		Route{"Assessment", http.MethodPost, constant.AssessmentStart, assessmentController.StartAssessment},
 		Route{"Assessment", http.MethodPost, constant.AssessmentResultView, assessmentController.GetUserAssessmentResult},
-
 	}
 }
 

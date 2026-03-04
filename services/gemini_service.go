@@ -69,7 +69,25 @@ func (s *GeminiServiceImpl) GenerateAssessment(req models.GenerateAssessmentRequ
 		assessmentName = fmt.Sprintf("%s Assessment - Level %d", req.Topic, req.DifficultyLevel)
 	}
 
+	var subtopics []string
+
+	for _, tag := range req.Tags {
+		if len(tag.ChildTags) > 0 {
+			subtopics = append(subtopics, tag.ChildTags...)
+		}
+	}
+
+	subtopicText := ""
+	if len(subtopics) > 0 {
+		subtopicText = fmt.Sprintf(
+			"Focus specifically on these subtopics: %s.",
+			strings.Join(subtopics, ", "),
+		)
+	}
+
 	prompt := fmt.Sprintf(`Generate %d %s about "%s" at %s difficulty level.
+
+%s
 
 IMPORTANT: You must respond with ONLY a valid JSON object, no additional text, explanation, or markdown formatting.
 
@@ -96,20 +114,23 @@ Requirements:
 1. Each question must have exactly 4 options
 2. Only ONE option should have "is_correct": true
 3. Correct answer should have "score": 1, others "score": 0
-4. Questions should be relevant to "%s" topic
-5. Difficulty should be %s
-6. Add relevant tags to each question (e.g., specific concepts, subtopics)
-7. Make questions clear and unambiguous
-8. Ensure all questions are unique and diverse
+4. Questions must strictly relate to "%s"
+5. If subtopics are provided, questions MUST be based only on those subtopics
+6. Difficulty should be %s
+7. Add relevant tags to each question
+8. Make questions clear and unambiguous
+9. Ensure all questions are unique and diverse
 
 Generate the JSON now:`,
 		req.NumberOfQuestions,
 		questionType,
 		req.Topic,
 		difficultyDesc,
+		subtopicText,
 		assessmentName,
 		req.Topic,
-		difficultyDesc)
+		difficultyDesc,
+	)
 
 	// Call Gemini API
 	geminiReq := GeminiRequest{

@@ -21,10 +21,11 @@ type AdminController struct {
 	contactService      services.ContactService
 	jobService          services.JobDescriptionService
 	questionService     services.QuestionService
+	dashboardService services.DashboardService
 }
 
-func NewAdminController(userService services.UserService, authService services.AuthService, assessmentService services.AssessmentService, notificationService services.NotificationService, contactService services.ContactService, jobService services.JobDescriptionService, questionService services.QuestionService) *AdminController {
-	return &AdminController{userService: userService, authService: authService, assessmentService: assessmentService, notificationService: notificationService, contactService: contactService, jobService: jobService, questionService: questionService}
+func NewAdminController(userService services.UserService, authService services.AuthService, assessmentService services.AssessmentService, notificationService services.NotificationService, contactService services.ContactService, jobService services.JobDescriptionService, questionService services.QuestionService,dashboardService services.DashboardService) *AdminController {
+	return &AdminController{userService: userService, authService: authService, assessmentService: assessmentService, notificationService: notificationService, contactService: contactService, jobService: jobService, questionService: questionService, dashboardService: dashboardService}
 }
 
 func (uc *AdminController) GetAssessments(ctx *gin.Context) {
@@ -443,4 +444,16 @@ func (uc *AdminController) DeleteUser(ctx *gin.Context) {
 	}
 
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "User deleted successfully", nil, nil, nil)
+}
+
+func (ac *AdminController) GetDashboard(c *gin.Context) {
+	data, err := ac.dashboardService.GetDashboard()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, data)
 }

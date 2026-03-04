@@ -9,8 +9,8 @@ import (
 	"errors"
 	"log"
 	"mime/multipart"
-	"time"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
@@ -52,11 +52,12 @@ type AssessmentService interface {
 
 type AssessmentServiceImpl struct {
 	assessmentRepo repository.AssessmentRepository
+	activityRepo   repository.ActivityRepository
 	db             *gorm.DB
 }
 
-func NewAssessmentService(assessmentRepo repository.AssessmentRepository, db *gorm.DB) AssessmentService {
-	return &AssessmentServiceImpl{assessmentRepo: assessmentRepo, db: db}
+func NewAssessmentService(assessmentRepo repository.AssessmentRepository, db *gorm.DB, activityRepo repository.ActivityRepository) AssessmentService {
+	return &AssessmentServiceImpl{assessmentRepo: assessmentRepo, db: db, activityRepo: activityRepo}
 }
 
 func (s *AssessmentServiceImpl) GetAssessment(assessmentSeq string) (*models.AssessmentResponse, error) {
@@ -426,7 +427,6 @@ func (s *AssessmentServiceImpl) CreateDuplicateAssessment(assessmentSequence, us
 		return nil, err
 	}
 
-	// Get all question IDs for bulk tag fetching
 	questionIDs := make([]int64, len(asmtQtns))
 	for i, q := range asmtQtns {
 		questionIDs[i] = q.QuestionID
@@ -480,18 +480,27 @@ func (s *AssessmentServiceImpl) CreateDuplicateAssessment(assessmentSequence, us
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
+	_ = s.activityRepo.LogActivity(
+		1,
+		asmtMst.AssessmentDesc+" (Duplicated)",
+	)
 
 	response := map[string]string{
 		"assessment_sequence": newAssmtSeq,
 	}
 	return response, nil
 }
-func (s *AssessmentServiceImpl) CreateAssessmentViaFileUpload(file multipart.File, filename, userId string, assessment *models.SheetAssessment) (interface{}, error) {
+
+func (s *AssessmentServiceImpl) CreateAssessmentViaFileUpload(
+	file multipart.File,
+	filename,
+	userId string,
+	assessment *models.SheetAssessment,
+) (interface{}, error) {
+
 	var jsonResponse *models.SheetAssessment
 	var err error
 
-	// If assessment is provided directly (from AI generation), use it
-	// Otherwise parse from file upload
 	if assessment != nil {
 		jsonResponse = assessment
 	} else {
@@ -502,12 +511,50 @@ func (s *AssessmentServiceImpl) CreateAssessmentViaFileUpload(file multipart.Fil
 	}
 
 	tx := s.db.Begin()
-	assessmentSequence, err := s.assessmentRepo.SaveAssessmentWithQuestions(context.Background(), tx, *jsonResponse, userId)
+
+	assessmentSequence, err := s.assessmentRepo.SaveAssessmentWithQuestions(
+		context.Background(),
+		tx,
+		*jsonResponse,
+		userId,
+	)
 	if err != nil {
 		tx.Rollback()
 		return nil, err
 	}
-	tx.Commit()
+
+	// 🔥 ADD THIS BLOCK (IMPORTANT)
+	if len(jsonResponse.Tags) > 0 {
+		for _, tagReq := range jsonResponse.Tags {
+
+			tagIDs, err := s.assessmentRepo.ProcessTagRequest(tx, tagReq, userId)
+			if err != nil {
+				tx.Rollback()
+				return nil, err
+			}
+
+			for _, tagID := range tagIDs {
+				if err := s.assessmentRepo.CreateAssessmentTagMappingWithParents(
+					tx,
+					assessmentSequence,
+					tagID,
+					userId,
+				); err != nil {
+					tx.Rollback()
+					return nil, err
+				}
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+	_ = s.activityRepo.LogActivity(
+		1,
+		assessmentSequence+" - "+jsonResponse.AssessmentName,
+	)
+
 	jsonResponse.AssessmentSequence = assessmentSequence
 	return jsonResponse, nil
 }
@@ -571,49 +618,38 @@ func (s *AssessmentServiceImpl) CreateAssessmentViaMaual(
 		return nil, err
 	}
 
-	// 🔥 MARKS DISTRIBUTION LOGIC
-	questionCount := len(req.Questions)
-
-	if questionCount == 0 {
+	// Ensure questions exist
+	if len(req.Questions) == 0 {
 		tx.Rollback()
 		return nil, errors.New("no questions selected")
 	}
 
-	marksPerQuestion := req.Marks / int64(questionCount)
-remainder := req.Marks % int64(questionCount)
+	// ⭐ Use score coming from request instead of distributing marks
+	for index, q := range req.Questions {
 
-for index, questionID := range req.Questions {
+		mapping := models.AssessmentQuestionMst{
+			AssessmentID:       int(asmt.AssessmentID),
+			AssessmentSequence: asmt.AssessmentSequence,
+			QuestionID:         q.QuestionID,
+			SequenceID:         int64(index + 1),
 
-    points := marksPerQuestion
+			CorrectPoints:     q.Score,
+			NegativePoints:    0,
+			DurationInSeconds: 0,
+			SkippingAllowed:   false,
 
-    // Distribute remaining marks
-    if int64(index) < remainder {
-        points += 1
-    }
+			CreatedBy:  userId,
+			CreatedOn:  time.Now(),
+			ModifiedOn: time.Now(),
+			IsActive:   true,
+			IsDeleted:  false,
+		}
 
-    mapping := models.AssessmentQuestionMst{
-        AssessmentID:       int(asmt.AssessmentID),
-        AssessmentSequence: asmt.AssessmentSequence,
-        QuestionID:         questionID,
-        SequenceID:         int64(index + 1),
-
-        CorrectPoints:     points,
-        NegativePoints:    0,
-        DurationInSeconds: 0,
-        SkippingAllowed:   false,
-
-        CreatedBy:  userId,
-        CreatedOn:  time.Now(),
-        ModifiedOn: time.Now(),
-        IsActive:   true,
-        IsDeleted:  false,
-    }
-
-    if err := tx.Create(&mapping).Error; err != nil {
-        tx.Rollback()
-        return nil, err
-    }
-}
+		if err := tx.Create(&mapping).Error; err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+	}
 
 	// TAGS
 	if len(req.Tags) > 0 {
@@ -623,6 +659,7 @@ for index, questionID := range req.Questions {
 				tx.Rollback()
 				return nil, err
 			}
+
 			for _, tagID := range tagIDs {
 				if err := s.assessmentRepo.CreateAssessmentTagMappingWithParents(
 					tx,
@@ -640,6 +677,11 @@ for index, questionID := range req.Questions {
 	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
+
+	_ = s.activityRepo.LogActivity(
+		1,
+		asmt.AssessmentSequence+" - "+asmt.AssessmentDesc,
+	)
 
 	tags, _ := s.assessmentRepo.GetTagRequestsByAssessmentSequence(asmt.AssessmentSequence)
 
@@ -681,6 +723,10 @@ func (s *AssessmentServiceImpl) SubmitAssessment(userID string, req models.Submi
 	if err := tx.Commit().Error; err != nil {
 		return err
 	}
+	_ = s.activityRepo.LogActivity(
+		5, // Assessment Completed
+		req.AssessmentSequence,
+	)
 	return nil
 }
 
@@ -745,6 +791,10 @@ func (s *AssessmentServiceImpl) DistributeAssessmentUser(
 		return err
 	}
 
+	_ = s.activityRepo.LogActivity(
+		4,
+		assessmentSeq+" - "+asmt.AssessmentDesc,
+	)
 	return nil
 }
 
@@ -1245,13 +1295,13 @@ func (s *AssessmentServiceImpl) StartAssessment(userID, assessmentSequence strin
 
 	tx := s.db.Begin()
 
-session, err := s.assessmentRepo.CreateUserSession(
-	tx,
-	userID,
-	assessmentSequence,
-	assessment.AssessmentType,
-	assessment.PartnerID,
-)
+	session, err := s.assessmentRepo.CreateUserSession(
+		tx,
+		userID,
+		assessmentSequence,
+		assessment.AssessmentType,
+		assessment.PartnerID,
+	)
 	if err != nil {
 		tx.Rollback()
 		return "", err
@@ -1307,7 +1357,10 @@ func (s *AssessmentServiceImpl) GetAdminAssessmentUserResult(
 		attemptMap[sessionID].TotalMarks += correctPoints
 		attemptMap[sessionID].ObtainedMarks += pointsAssigned
 
-		isCorrect := pointsAssigned > 0
+		selected := safeString(row["selected_option"])
+		correct := safeString(row["correct_option"])
+
+		isCorrect := selected == correct
 
 		attemptMap[sessionID].Questions = append(
 			attemptMap[sessionID].Questions,
@@ -1378,8 +1431,6 @@ func toInt64(val interface{}) int64 {
 	}
 }
 
-
-
 func (s *AssessmentServiceImpl) CheckUserAssignment(
 	assessmentSeq string,
 	userIDs []string,
@@ -1403,5 +1454,21 @@ func (s *AssessmentServiceImpl) CheckUserAssignment(
 }
 
 func (s *AssessmentServiceImpl) DeleteAssessment(assessmentSeq string) error {
-	return s.assessmentRepo.DeleteAssessment(assessmentSeq)
+
+	asmt, err := s.assessmentRepo.GetAssessmentMstByAssmtSeq(assessmentSeq)
+	if err != nil {
+		return err
+	}
+
+	err = s.assessmentRepo.DeleteAssessment(assessmentSeq)
+	if err != nil {
+		return err
+	}
+
+	_ = s.activityRepo.LogActivity(
+		7,
+		assessmentSeq+" - "+asmt.AssessmentDesc,
+	)
+
+	return nil
 }

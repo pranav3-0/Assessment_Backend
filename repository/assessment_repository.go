@@ -10,7 +10,7 @@ import (
 	"log"
 	"strings"
 	"time"
-
+ 
 	"gorm.io/gorm"
 )
 
@@ -1136,7 +1136,7 @@ func (r *AssessmentRepositoryImpl) SaveAssessmentWithQuestions(ctx context.Conte
 		ModifiedOn:     createdAt,
 		ModifiedBy:     userId,
 		Marks:          int64(len(assessment.Questions)),
-		AssessmentType: "survey",
+		AssessmentType: "upload",
 	}
 	if err := tx.WithContext(ctx).Create(&assessmentMst).Error; err != nil {
 		return "", fmt.Errorf("failed to insert assessment_mst: %w", err)
@@ -1172,7 +1172,13 @@ func (r *AssessmentRepositoryImpl) SaveAssessmentWithQuestions(ctx context.Conte
 	var questionIDs []int64
 
 	for _, q := range assessment.Questions {
-		// Insert question text in content_mst
+		var correctPoints int64 = 0
+		for _, opt := range q.Options {
+			if opt.IsCorrect {
+				correctPoints = int64(opt.Score)
+				break
+			}
+		}
 		contentQ := models.ContentMst{
 			ContentTypeID: 1,
 			Value:         q.Title,
@@ -1184,9 +1190,21 @@ func (r *AssessmentRepositoryImpl) SaveAssessmentWithQuestions(ctx context.Conte
 		questionContentID := contentQ.ContentID
 
 		// Insert into question_mst
-		questionTypeID := 0
-		if id, ok := utils.QuestionTypeMap[q.QuestionType]; ok {
-			questionTypeID = id
+		questionType := strings.ToLower(strings.TrimSpace(q.QuestionType))
+
+		var questionTypeID int
+
+		switch questionType {
+		case "single":
+			questionTypeID = 1
+		case "multiple", "mcq", "multiple_choice":
+			questionTypeID = 2
+		case "short_answer":
+			questionTypeID = 3
+		case "essay":
+			questionTypeID = 4
+		default:
+			return "", fmt.Errorf("invalid question type: %s", q.QuestionType)
 		}
 
 		questionMst := models.QuestionMst{
@@ -1202,10 +1220,8 @@ func (r *AssessmentRepositoryImpl) SaveAssessmentWithQuestions(ctx context.Conte
 		}
 
 		questionID := questionMst.QuestionID
-		questionIDs = append(questionIDs, questionID) // Collect question ID
+		questionIDs = append(questionIDs, questionID)
 
-		// Link question to assessment
-		// Note: skipping_allowed should be opposite of mandatory_to_answer
 		skippingAllowed := !q.MandatoryToAnswer
 
 		assessmentQ := models.AssessmentQuestionMst{
@@ -1220,7 +1236,7 @@ func (r *AssessmentRepositoryImpl) SaveAssessmentWithQuestions(ctx context.Conte
 			ModifiedOn:         createdAt,
 			ModifiedBy:         userId,
 			SequenceID:         0,
-			CorrectPoints:      0,
+			CorrectPoints:      correctPoints,
 			DurationInSeconds:  0,
 			NegativePoints:     0,
 			DifficultyLevel:    "",
@@ -1230,7 +1246,6 @@ func (r *AssessmentRepositoryImpl) SaveAssessmentWithQuestions(ctx context.Conte
 			return "", fmt.Errorf("failed to insert assessment_question_mst: %w", err)
 		}
 
-		// 4️⃣ Loop through options
 		for _, opt := range q.Options {
 			contentOpt := models.ContentMst{
 				ContentTypeID: 1,
@@ -1253,14 +1268,12 @@ func (r *AssessmentRepositoryImpl) SaveAssessmentWithQuestions(ctx context.Conte
 			}
 		}
 
-		// Handle question tags if provided (with parent-child tag support)
 		if len(q.Tags) > 0 {
 			for _, tagReq := range q.Tags {
 				tagIDs, err := r.ProcessTagRequest(tx, tagReq, userId)
 				if err != nil {
 					return "", fmt.Errorf("failed to process tag request for question: %w", err)
 				}
-				// Create mappings for all tags (parent and children)
 				for _, tagID := range tagIDs {
 					if err := r.CreateQuestionTagMappingWithParents(tx, questionID, tagID, userId); err != nil {
 						return "", fmt.Errorf("failed to create question tag mapping: %w", err)
@@ -1281,7 +1294,6 @@ func (r *AssessmentRepositoryImpl) SaveAssessmentWithQuestions(ctx context.Conte
 					return "", fmt.Errorf("failed to create assessment tag mapping: %w", err)
 				}
 
-				// Map to ALL questions in the assessment
 				for _, qID := range questionIDs {
 					if err := r.CreateQuestionTagMappingWithParents(tx, qID, tagID, userId); err != nil {
 						return "", fmt.Errorf("failed to create question tag mapping for assessment tag: %w", err)
@@ -2067,21 +2079,28 @@ func (r *AssessmentRepositoryImpl) SavePhoto(
 	photoData []byte,
 ) error {
 
+	fileName := fmt.Sprintf("%s_%s_%s.jpg", assessmentSeq, userID, sessionID)
+
+	path, err := utils.SaveFileToDisk("uploads/photos", fileName, photoData)
+	if err != nil {
+		return err
+	}
+
 	query := `
-    INSERT INTO assessment_verification
-    (assessment_sequence, user_id, session_id, photo)
-    VALUES (?, ?, ?, ?)
-    ON CONFLICT (assessment_sequence, user_id, session_id)
-    DO UPDATE SET 
-        photo = EXCLUDED.photo,
-        updated_on = CURRENT_TIMESTAMP
-    `
+	INSERT INTO assessment_verification
+	(assessment_sequence, user_id, session_id, photo_url)
+	VALUES (?, ?, ?, ?)
+	ON CONFLICT (assessment_sequence, user_id, session_id)
+	DO UPDATE SET 
+		photo_url = EXCLUDED.photo_url,
+		updated_on = CURRENT_TIMESTAMP
+	`
 
 	return r.db.Exec(query,
 		assessmentSeq,
 		userID,
 		sessionID,
-		photoData,
+		path,
 	).Error
 }
 
@@ -2092,16 +2111,23 @@ func (r *AssessmentRepositoryImpl) SaveVoice(
 	voiceData []byte,
 ) error {
 
+	fileName := fmt.Sprintf("%s_%s_%s.webm", assessmentSeq, userID, sessionID)
+
+	path, err := utils.SaveFileToDisk("uploads/voices", fileName, voiceData)
+	if err != nil {
+		return err
+	}
+
 	query := `
-    UPDATE assessment_verification
-    SET voice = ?, updated_on = CURRENT_TIMESTAMP
-    WHERE assessment_sequence = ?
-    AND user_id = ?
-    AND session_id = ?
-    `
+	UPDATE assessment_verification
+	SET voice_url = ?, updated_on = CURRENT_TIMESTAMP
+	WHERE assessment_sequence = ?
+	AND user_id = ?
+	AND session_id = ?
+	`
 
 	return r.db.Exec(query,
-		voiceData,
+		path,
 		assessmentSeq,
 		userID,
 		sessionID,

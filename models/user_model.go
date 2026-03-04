@@ -27,6 +27,18 @@ type AssessmentUser struct {
 	UpdatedBy *uuid.UUID `gorm:"type:uuid;column:updated_by" json:"updated_by"`
 }
 
+type UserProfileResponse struct {
+	UserID            uuid.UUID `json:"user_id"`
+	FirstName         string    `json:"first_name"`
+	LastName          string    `json:"last_name"`
+	Email             string    `json:"email"`
+	Phone             string    `json:"phone"`
+	UserType          string    `json:"user_type"`
+	Skills            []string  `json:"skills"`
+	AverageMarks      float64   `json:"average_marks"`
+	AveragePercentage float64   `json:"average_percentage"`
+	Achievements      []string  `json:"achievements"`
+}
 func (AssessmentUser) TableName() string {
 	return "assessment_user_mst"
 }

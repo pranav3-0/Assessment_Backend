@@ -4,6 +4,7 @@ type CreateQuestionRequest struct {
 	Title             string       `json:"title"`
 	MandatoryToAnswer bool         `json:"mandatory_to_answer"`
 	QuestionType      string       `json:"question_type"`
+	Score             int64        `json:"score"` 
 	Options           []OptionReq  `json:"options"`
 	Tags              []TagRequest `json:"tags"`
 }

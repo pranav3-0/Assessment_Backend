@@ -206,13 +206,12 @@ func splitGormTag(tag string) []string {
 }
 
 func ParseQuestionnaireExcelToJSON(file multipart.File, filename string) (*models.SheetAssessment, error) {
-	// Load Excel file
 	f, err := excelize.OpenReader(file)
 	if err != nil {
 		return nil, fmt.Errorf("cannot open excel: %w", err)
 	}
 
-	rows, err := f.GetRows("Sheet1") // change if your sheet name differs
+	rows, err := f.GetRows("Sheet1")
 	if err != nil {
 		return nil, fmt.Errorf("cannot read sheet: %w", err)
 	}
@@ -220,34 +219,58 @@ func ParseQuestionnaireExcelToJSON(file multipart.File, filename string) (*model
 	assessment := &models.SheetAssessment{
 		AssessmentName: "",
 		Questions:      []models.SheetQuestion{},
+		Tags:           []models.TagRequest{},
 	}
 
 	var currentQ *models.SheetQuestion
+	var assessmentTagsAdded bool
 
 	for i, row := range rows {
 		if i == 0 {
-			continue // skip header
+			continue
 		}
 
-		// Ensure minimum columns exist
-		for len(row) < 9 {
+		for len(row) < 10 {
 			row = append(row, "")
 		}
 
 		questionType := strings.TrimSpace(row[1])
 		assessmentName := strings.TrimSpace(row[2])
-		title := strings.TrimSpace(row[3])
-		optLabel := strings.TrimSpace(row[4])
-		scoreStr := strings.TrimSpace(row[5])
-		correctStr := strings.TrimSpace(row[6])
-		mandatoryStr := strings.TrimSpace(row[7]) // mandatory answer
+		subject := strings.TrimSpace(row[3])
+		topicsStr := strings.TrimSpace(row[4])
+		title := strings.TrimSpace(row[5])
+		optLabel := strings.TrimSpace(row[6])
+		scoreStr := strings.TrimSpace(row[7])
+		correctStr := strings.TrimSpace(row[8])
+		mandatoryStr := strings.TrimSpace(row[9])
 
-		// Set assessment name (once)
 		if assessment.AssessmentName == "" && assessmentName != "" {
 			assessment.AssessmentName = assessmentName
 		}
 
-		// If title cell contains question → start new question
+		var tags []models.TagRequest
+		if subject != "" {
+			var childTags []string
+			if topicsStr != "" {
+				splitTopics := strings.Split(topicsStr, ",")
+				for _, t := range splitTopics {
+					childTags = append(childTags, strings.TrimSpace(t))
+				}
+			}
+
+			tagReq := models.TagRequest{
+				ParentTag: subject,
+				ChildTags: childTags,
+			}
+
+			tags = append(tags, tagReq)
+
+			if !assessmentTagsAdded {
+				assessment.Tags = append(assessment.Tags, tagReq)
+				assessmentTagsAdded = true
+			}
+		}
+
 		if title != "" {
 			if currentQ != nil {
 				assessment.Questions = append(assessment.Questions, *currentQ)
@@ -263,10 +286,10 @@ func ParseQuestionnaireExcelToJSON(file multipart.File, filename string) (*model
 				MandatoryToAnswer: mandatory,
 				QuestionType:      questionType,
 				Options:           []models.SheetOption{},
+				Tags:              tags,
 			}
 		}
 
-		// Create option only if label exists
 		if optLabel != "" && currentQ != nil {
 			score, _ := strconv.Atoi(scoreStr)
 			isCorrect := strings.ToUpper(correctStr) == "TRUE"
@@ -281,14 +304,12 @@ func ParseQuestionnaireExcelToJSON(file multipart.File, filename string) (*model
 		}
 	}
 
-	// Append the final question
 	if currentQ != nil {
 		assessment.Questions = append(assessment.Questions, *currentQ)
 	}
 
 	return assessment, nil
 }
-
 var QuestionTypeMap = map[string]int{
 	"simple_choice":   1,
 	"multiple_choice": 2,

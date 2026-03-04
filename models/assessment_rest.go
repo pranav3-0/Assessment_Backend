@@ -238,25 +238,30 @@ type CertificateDetails struct {
 	CompletedAt        time.Time
 }
 
+type AssessmentQuestionInput struct {
+	QuestionID int64 `json:"question_id"`
+	Score      int64 `json:"score"`
+}
+
 type ManualAssessmentRequest struct {
-	AssessmentName       string       `json:"assessment_name"`
-	Duration             int64        `json:"duration"`
-	Marks                int64        `json:"marks"`
-	StartTime            *string      `json:"start_time"`
-	ValidFrom            *time.Time   `json:"valid_from"`
-	ValidTo              *time.Time   `json:"valid_to"`
-	Instructions         string       `json:"instructions"`
-	AssessmentType       string       `json:"assessment_type"`
-	Certificate          bool         `json:"certificate"`
-	CenterID             int          `json:"center_id"`
-	ServiceLineID        int          `json:"service_line_id"`
-	BusinessPartnerID    int          `json:"business_partner_id"`
-	SubBusinessPartnerID int          `json:"sub_business_partner_id"`
-	ServiceGroupID       int          `json:"service_group_id"`
-	ServiceID            int          `json:"service_id"`
-	Questions            []int64      `json:"questions"`
-	JobID                *int64       `json:"job_id"`
-	Tags                 []TagRequest `json:"tags,omitempty"`
+	AssessmentName       string                    `json:"assessment_name"`
+	Duration             int64                     `json:"duration"`
+	Marks                int64                     `json:"marks"`
+	StartTime            *string                   `json:"start_time"`
+	ValidFrom            *time.Time                `json:"valid_from"`
+	ValidTo              *time.Time                `json:"valid_to"`
+	Instructions         string                    `json:"instructions"`
+	AssessmentType       string                    `json:"assessment_type"`
+	Certificate          bool                      `json:"certificate"`
+	CenterID             int                       `json:"center_id"`
+	ServiceLineID        int                       `json:"service_line_id"`
+	BusinessPartnerID    int                       `json:"business_partner_id"`
+	SubBusinessPartnerID int                       `json:"sub_business_partner_id"`
+	ServiceGroupID       int                       `json:"service_group_id"`
+	ServiceID            int                       `json:"service_id"`
+	Questions            []AssessmentQuestionInput `json:"questions"`
+	JobID                *int64                    `json:"job_id"`
+	Tags                 []TagRequest              `json:"tags,omitempty"`
 }
 
 type GenerateAssessmentRequest struct {
