@@ -63,15 +63,17 @@ const (
 type UserRole string
 
 const (
-	Admin   UserRole = "admin"
-	Manager UserRole = "manager"
-	User    UserRole = "user"
+	Admin    UserRole = "admin"
+	Manager  UserRole = "manager"
+	User     UserRole = "user"
+	Reviewer UserRole = "reviewer"
 )
 
 var ValidUserRoles = []UserRole{
 	Admin,
 	User,
 	Manager,
+	Reviewer,
 }
 
 type AssessmentState string

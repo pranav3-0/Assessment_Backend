@@ -7,7 +7,7 @@ import (
 	"log"
 	"strings"
 	"time"
-
+     "errors"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -122,8 +122,17 @@ SELECT
 
 	`
 
-	err := r.db.Raw(query, username).Scan(&user).Error
-	return user, err
+	result := r.db.Raw(query, username).Scan(&user)
+
+if result.Error != nil {
+    return user, result.Error
+}
+
+if result.RowsAffected == 0 {
+    return user, errors.New("user not found")
+}
+
+return user, nil
 }
 
 func (r *UserRepositoryImpl) FindByUserId(userId string) (models.AssessmentUser, error) {

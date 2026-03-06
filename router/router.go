@@ -60,9 +60,11 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 
 	UserRoutes(apiGroup, userController)
 	AdminRoutes(apiGroup, adminController, assessmentController, mastersController)
+	HRRoutes(apiGroup, adminController, assessmentController, mastersController)
 	QuestionAuthorRoutes(apiGroup, adminController, assessmentController, mastersController)
 	AssessmentRoutes(apiGroup, assessmentController)
 	OpenRoutes(apiGroup, publicController, adminController)
+	ReviewerRoutes(apiGroup, adminController)
 }
 
 func getAdminRoutes(adminController *controller.AdminController, assessmentController *controller.AssessmentController, mastersController *controller.MastersController) Routes {
@@ -145,18 +147,86 @@ func getAdminRoutes(adminController *controller.AdminController, assessmentContr
 	}
 }
 
-func getQuestionAuthorRoutes(adminController *controller.AdminController, assessmentController *controller.AssessmentController, mastersController *controller.MastersController) Routes {
+func getHRRoutes(
+	adminController *controller.AdminController,
+	assessmentController *controller.AssessmentController,
+	mastersController *controller.MastersController,
+) Routes {
+
 	return Routes{
+
+		Route{"HR", http.MethodPost, constant.Assessments, adminController.GetAssessments},
+		Route{"HR", http.MethodPost, constant.ManagerAssessments, adminController.GetManagerAssessments},
+		Route{"HR", http.MethodGet, constant.Assessment, assessmentController.GetAssessment},
+		Route{"HR", http.MethodPost, constant.Users, adminController.GetUsers},
+		Route{"HR", http.MethodPost, constant.UpdateUser, adminController.UpdateUserProfile},
+		Route{"HR", http.MethodPost, constant.ImportAssessment, assessmentController.UploadAssessment},
+		Route{"HR", http.MethodPost, constant.GenerateAssessment, assessmentController.GenerateAssessmentWithAI},
+		Route{"HR", http.MethodPost, constant.SaveGeneratedAssessment, assessmentController.SaveGeneratedAssessment},
+		Route{"HR", http.MethodPost, constant.Assessment, assessmentController.CreateAssessment},
+		Route{"HR", http.MethodPost, constant.AssessmentDuplicate, assessmentController.DuplicateAssessment},
+		Route{"HR", http.MethodPut, constant.AssessmentStatus, adminController.UpdateAssessmentStatusController},
+		Route{"HR", http.MethodPut, constant.Assessment, adminController.UpdateAssessment},
+		Route{"HR", http.MethodPost, constant.Questions, adminController.GetQuestionsController},
+		Route{"HR", http.MethodPost, constant.DistributeAssessmentUser, adminController.DistributeAssessmentToUserController},
+		Route{"HR", http.MethodPost, constant.DistributeAssessmentManager, adminController.DistributeAssessmentToManagerController},
+		Route{"HR", http.MethodPost, constant.MapUsersToManager, adminController.MapUsersToManagerController},
+		Route{"HR", http.MethodPost, constant.AssessmentReport, assessmentController.DownloadAssessmentReport},
+		Route{"HR", http.MethodPost, constant.JobDescription, adminController.CreateJobDescription},
+		Route{"HR", http.MethodPut, constant.JobDescription, adminController.UpdateJobDescription},
+		Route{"HR", http.MethodDelete, constant.JobDescription + "/:id", adminController.DeleteJobDescription},
+		Route{"HR", http.MethodPost, constant.JobDescriptions, adminController.GetJobDescriptions},
+		Route{"HR", http.MethodPost, constant.Question, adminController.CreateMultipleQuestions},
+		Route{"HR", http.MethodPost, constant.AssessmentUserResult, adminController.GetAssessmentUserResult},
+		Route{"HR", http.MethodPost, constant.CheckAssessmentAssignment, adminController.CheckAssessmentAssignment},
+		Route{"HR", http.MethodDelete, constant.DeleteAssessment, assessmentController.DeleteAssessment},
+		Route{"HR", http.MethodDelete, constant.DeleteUser, adminController.DeleteUser},
+		Route{"HR", http.MethodGet, constant.Dashboard, adminController.GetDashboard},
+	}
+}
+
+func getQuestionAuthorRoutes(	adminController *controller.AdminController,assessmentController *controller.AssessmentController,mastersController *controller.MastersController,) Routes {
+
+	return Routes{
+
+	
+
 		Route{"Question Author", http.MethodPost, constant.Assessments, adminController.GetAssessments},
-		Route{"Question Author", http.MethodPost, constant.Users, adminController.GetUsers},
-		Route{"Question Author", http.MethodPost, constant.ImportAssessment, assessmentController.UploadAssessment},
-		Route{"Question Author", http.MethodPost, constant.GenerateAssessment, assessmentController.GenerateAssessmentWithAI},
-		Route{"Question Author", http.MethodPost, constant.SaveGeneratedAssessment, assessmentController.SaveGeneratedAssessment},
+		Route{"Question Author", http.MethodGet, constant.Assessment, assessmentController.GetAssessment},
+
 		Route{"Question Author", http.MethodPost, constant.Assessment, assessmentController.CreateAssessment},
-		Route{"Question Author", http.MethodPost, constant.AssessmentDuplicate, assessmentController.DuplicateAssessment},
+
 		Route{"Question Author", http.MethodPut, constant.Assessment, adminController.UpdateAssessment},
-		Route{"Question Author", http.MethodPost, constant.Questions, adminController.GetQuestionsController},
+
+		Route{"Question Author", http.MethodPost, constant.AssessmentDuplicate, assessmentController.DuplicateAssessment},
+
 		Route{"Question Author", http.MethodPost, constant.DistributeAssessmentManager, adminController.DistributeAssessmentToManagerController},
+		Route{"Question Author", http.MethodPost, constant.Questions, adminController.GetQuestionsController},
+
+		Route{"Question Author", http.MethodPost, constant.Question, adminController.CreateMultipleQuestions},
+
+		Route{"Question Author", http.MethodPost, constant.GenerateAssessment, assessmentController.GenerateAssessmentWithAI},
+
+		Route{"Question Author", http.MethodPost, constant.SaveGeneratedAssessment, assessmentController.SaveGeneratedAssessment},
+
+		Route{"Question Author", http.MethodPost, constant.ImportAssessment, assessmentController.UploadAssessment},
+
+		Route{"Question Author", http.MethodPost, constant.JobDescriptions, adminController.GetJobDescriptions},
+
+		Route{"Question Author", http.MethodPost, constant.Users, adminController.GetUsers},
+	}
+}
+
+func getReviewerRoutes(adminController *controller.AdminController) Routes {
+
+	return Routes{
+
+		// Structure only (no API logic yet)
+
+		Route{"Reviewer", http.MethodPost, constant.Assessments, adminController.GetManagerAssessments},
+
+		Route{"Reviewer", http.MethodGet, constant.Assessment, adminController.GetManagerAssessments},
+
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -78,9 +79,12 @@ func (s *AuthServiceImpl) RegisterUser(ctx context.Context, req models.RegisterR
 func (s *AuthServiceImpl) LoginUser(ctx context.Context, req models.LoginRequest) (*models.LoginResponse, error) {
 	user, err := s.userRepo.FindByUsername(req.Username)
 	if err != nil {
-		return nil, errors.New("invalid username")
+		return nil, err
 	}
 
+	if user.UserID == uuid.Nil {
+		return nil, errors.New("invalid username or password")
+	}
 	client, err := s.clientRepo.GetByName(ctx, req.ClientID)
 	if err != nil {
 		return nil, errors.New("invalid client")
@@ -104,16 +108,16 @@ func (s *AuthServiceImpl) LoginUser(ctx context.Context, req models.LoginRequest
 		return nil, errors.New("unsupported authentication type")
 	}
 	response.User = &models.UserWithRoles{
-	UserID:     user.UserID,
-	FirstName:  user.FirstName,
-	LastName:   user.LastName,
-	Email:      user.Email,
-	Phone:      user.Phone,
-	Username:   user.Username,
-	AuthUserID: user.AuthUserID,
-	Roles:      user.Roles,
-	UserType:   user.UserType,   
-}
+		UserID:     user.UserID,
+		FirstName:  user.FirstName,
+		LastName:   user.LastName,
+		Email:      user.Email,
+		Phone:      user.Phone,
+		Username:   user.Username,
+		AuthUserID: user.AuthUserID,
+		Roles:      user.Roles,
+		UserType:   user.UserType,
+	}
 
 	return &response, nil
 

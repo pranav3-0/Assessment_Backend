@@ -30,10 +30,11 @@ type routes struct {
 type Routes []Route
 
 var ProtectedRoutes = map[string][]string{
-	"/v1/user/user-profile": {"admin", "user", "manager"},
-	"/v1/assessment/":       {"admin", "user", "manager"},
-	"/v1/admin/":            {"admin", "manager"},
-	"/v1/question_author/":  {"admin", "questionnaire_author"},
+	"/v1/user/user-profile": {"admin", "user", "manager","hr"},
+	"/v1/assessment/":       {"admin", "user", "manager","hr"},
+	"/v1/admin/":            {"admin", "hr"},
+	"/v1/question_author/":  {"admin", "questionnaire_author","hr"},
+	"/v1/reviewer/":         {"admin", "reviewer","hr"},
 }
 
 func AdminRoutes(g *gin.RouterGroup, adminController *controller.AdminController, assessmentController *controller.AssessmentController, mastersController *controller.MastersController) {
@@ -114,6 +115,39 @@ func OpenRoutes(g *gin.RouterGroup, publicController *controller.PublicControlle
 	}
 }
 
+func HRRoutes(
+	g *gin.RouterGroup,
+	adminController *controller.AdminController,
+	assessmentController *controller.AssessmentController,
+	mastersController *controller.MastersController,
+) {
+
+	hr := g.Group("/hr")
+
+	for _, hrRoute := range getHRRoutes(adminController, assessmentController, mastersController) {
+
+		protectedHandler := auth.Authenticate(
+			hr.BasePath()+hrRoute.Path,
+			ProtectedRoutes,
+			hrRoute.HandleFunc,
+		)
+
+		switch hrRoute.Method {
+
+		case http.MethodPost:
+			hr.POST(hrRoute.Path, protectedHandler)
+
+		case http.MethodGet:
+			hr.GET(hrRoute.Path, protectedHandler)
+
+		case http.MethodPut:
+			hr.PUT(hrRoute.Path, protectedHandler)
+
+		case http.MethodDelete:
+			hr.DELETE(hrRoute.Path, protectedHandler)
+		}
+	}
+}
 func Routing(envFile string) {
 	r := routes{
 		router: gin.Default(),
@@ -141,6 +175,35 @@ func Routing(envFile string) {
 		err := r.router.Run(":" + os.Getenv("GO_SERVER_PORT"))
 		if err != nil {
 			log.Fatal("Failed to start HTTPS server: ", err)
+		}
+	}
+}
+
+func ReviewerRoutes(g *gin.RouterGroup, adminController *controller.AdminController) {
+
+	reviewer := g.Group("/reviewer")
+
+	for _, reviewerRoute := range getReviewerRoutes(adminController) {
+
+		protectedHandler := auth.Authenticate(
+			reviewer.BasePath()+reviewerRoute.Path,
+			ProtectedRoutes,
+			reviewerRoute.HandleFunc,
+		)
+
+		switch reviewerRoute.Method {
+
+		case http.MethodPost:
+			reviewer.POST(reviewerRoute.Path, protectedHandler)
+
+		case http.MethodGet:
+			reviewer.GET(reviewerRoute.Path, protectedHandler)
+
+		case http.MethodPut:
+			reviewer.PUT(reviewerRoute.Path, protectedHandler)
+
+		case http.MethodDelete:
+			reviewer.DELETE(reviewerRoute.Path, protectedHandler)
 		}
 	}
 }
