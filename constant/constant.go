@@ -58,6 +58,8 @@ const (
 	AssessmentResultView        = "/assessment-result"
 	CheckAssessmentAssignment   = "/assessment/check-assignment"
 	Dashboard                   = "/dashboard"
+	Reviewers       = "/reviewers"
+	AssignReviewer  = "/assign-reviewer"
 )
 
 type UserRole string

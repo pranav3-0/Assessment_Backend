@@ -457,3 +457,70 @@ func (ac *AdminController) GetDashboard(c *gin.Context) {
 
 	c.JSON(http.StatusOK, data)
 }
+
+func (c *AdminController) GetReviewers(ctx *gin.Context) {
+
+	reviewers, err := c.assessmentService.GetReviewers()
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, models.Response{
+			Status:     "failure",
+			StatusCode: http.StatusInternalServerError,
+			Message:    "Failed to fetch reviewers",
+			Error:      err.Error(),
+			Content:    nil,
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, models.Response{
+		Status:     "success",
+		StatusCode: http.StatusOK,
+		Message:    "Reviewers fetched successfully",
+		Content:    reviewers,
+	})
+}
+func (c *AdminController) AssignAssessmentToReviewer(ctx *gin.Context) {
+
+	var req struct {
+		ReviewerID         string `json:"reviewer_id"`
+		AssessmentSequence string `json:"assessment_sequence"`
+	}
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		ctx.JSON(http.StatusBadRequest, models.Response{
+			Status:     "failure",
+			StatusCode: http.StatusBadRequest,
+			Message:    "Invalid request",
+			Error:      err.Error(),
+			Content:    nil,
+		})
+		return
+	}
+
+	admin := ctx.GetString("username")
+
+	err := c.assessmentService.AssignAssessmentToReviewer(
+		req.ReviewerID,
+		req.AssessmentSequence,
+		admin,
+	)
+
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, models.Response{
+			Status:     "failure",
+			StatusCode: http.StatusInternalServerError,
+			Message:    "Failed to assign reviewer",
+			Error:      err.Error(),
+			Content:    nil,
+		})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, models.Response{
+		Status:     "success",
+		StatusCode: http.StatusOK,
+		Message:    "Assessment assigned to reviewer successfully",
+		Content:    nil,
+	})
+}

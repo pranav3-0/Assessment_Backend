@@ -49,3 +49,11 @@ func ErrorResponse(c *gin.Context, status string, statusCode int, message string
 		Error:      errorMessage,
 	})
 }
+
+type Response struct {
+	Status     string      `json:"status"`
+	StatusCode int         `json:"status_code"`
+	Message    string      `json:"message"`
+	Error      string      `json:"error,omitempty"`
+	Content    interface{} `json:"content"`
+}

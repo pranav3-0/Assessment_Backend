@@ -99,14 +99,23 @@ func AuthToken(requiredRoles ...string) gin.HandlerFunc {
 		var userRoles []string
 
 		hasRequiredRole := false
+
 		for _, requiredRole := range requiredRoles {
 			for _, role := range roles {
-				userRoles = append(userRoles, role.(string))
-				if role == requiredRole {
+
+				roleStr, ok := role.(string)
+				if !ok {
+					continue
+				}
+
+				userRoles = append(userRoles, roleStr)
+
+				if roleStr == requiredRole {
 					hasRequiredRole = true
 					break
 				}
 			}
+
 			if hasRequiredRole {
 				break
 			}
@@ -130,20 +139,34 @@ func AuthToken(requiredRoles ...string) gin.HandlerFunc {
 }
 
 func Authenticate(path string, protectedRoutes map[string][]string, handler gin.HandlerFunc) gin.HandlerFunc {
+
 	log.Printf("=== Setting up authentication for path: %s ===", path)
-	for protectedPrefix, roles := range protectedRoutes {
-		if strings.HasPrefix(path, protectedPrefix) {
-			log.Printf("Path %s matches protected prefix %s with required roles: %v", path, protectedPrefix, roles)
-			return gin.HandlerFunc(func(c *gin.Context) {
-				AuthToken(roles...)(c)
-				if c.IsAborted() {
-					log.Println("Request aborted by AuthToken middleware")
-					return
-				}
-				handler(c)
-			})
+
+	var matchedRoles []string
+
+	for prefix, roles := range protectedRoutes {
+		if strings.HasPrefix(path, prefix) {
+			matchedRoles = roles
+			log.Printf("Matched protected prefix: %s with roles %v", prefix, roles)
+			break
 		}
 	}
-	log.Printf("Path %s is not protected, no authentication required", path)
+
+	if matchedRoles != nil {
+		return gin.HandlerFunc(func(c *gin.Context) {
+
+			AuthToken(matchedRoles...)(c)
+
+			if c.IsAborted() {
+				log.Println("Request aborted by AuthToken middleware")
+				return
+			}
+
+			handler(c)
+		})
+	}
+
+	log.Printf("Path %s is not protected", path)
+
 	return handler
 }

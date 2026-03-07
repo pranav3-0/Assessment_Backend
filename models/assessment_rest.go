@@ -97,6 +97,9 @@ type AssessmentListResponse struct {
 	SessionImage        []byte                  `json:"session_image,omitempty" gorm:"-"`
 	JobTitle            *string                 `json:"job_title"`
 	Tags                []TagRequest            `json:"tags" gorm:"-"`
+	AssignedReviewer    *string                 `json:"assigned_reviewer"`
+	ReviewStatus        *string                 `json:"review_status"`
+	ReviewerNote        *string                 `json:"reviewer_note"`
 }
 
 type AssessmentAttendeesInfo struct {

@@ -28,12 +28,12 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	var dhlSubServiceRepository = repository.NewDHLSubServiceRepository(db)
 
 	var jobRepo = repository.NewJobDescriptionRepository(db)
-	var jobService = services.NewJobDescriptionService(jobRepo, db,activityRepo)
+	var jobService = services.NewJobDescriptionService(jobRepo, db, activityRepo)
 	var questionRepo = repository.NewQuestionRepository(db)
 	var questionService = services.NewQuestionService(questionRepo, db, assessmentRepo)
 
-	var userService = services.NewUserService(userRepo, clientRepo, db,activityRepo)
-	var assessmentService = services.NewAssessmentService(assessmentRepo, db,activityRepo)
+	var userService = services.NewUserService(userRepo, clientRepo, db, activityRepo)
+	var assessmentService = services.NewAssessmentService(assessmentRepo, db, activityRepo)
 	var geminiService = services.NewGeminiService()
 	var contactService = services.NewContactService(contactRepo)
 	var dhlBusinessPartnerService = services.NewDHLBusinessPartnerService(dhlBusinessPartnerRepository)
@@ -52,7 +52,7 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	var dashboardService = services.NewDashboardService(dashboardRepo)
 
 	var userController = controller.NewUserController(userService, authService)
-	var adminController = controller.NewAdminController(userService, authService, assessmentService, notificationService, contactService, jobService, questionService,dashboardService,)
+	var adminController = controller.NewAdminController(userService, authService, assessmentService, notificationService, contactService, jobService, questionService, dashboardService)
 	var assessmentController = controller.NewAssessmentController(assessmentService, userService, geminiService)
 	var publicController = controller.NewPublicController(contactService)
 	var mastersController = controller.NewMastersController(dhlBusinessPartnerService, dhlCenterService, dhlResCompanyService,
@@ -97,6 +97,9 @@ func getAdminRoutes(adminController *controller.AdminController, assessmentContr
 		Route{"Admin", http.MethodDelete, constant.DeleteAssessment, assessmentController.DeleteAssessment},
 		Route{"Admin", http.MethodDelete, constant.DeleteUser, adminController.DeleteUser},
 		Route{"Admin", http.MethodGet, constant.Dashboard, adminController.GetDashboard},
+
+		Route{"Admin", http.MethodGet, constant.Reviewers, adminController.GetReviewers},
+		Route{"Admin", http.MethodPost, constant.AssignReviewer, adminController.AssignAssessmentToReviewer},
 
 		Route{"Contact Form", http.MethodPost, constant.ContactResponse, adminController.ListContactRespController},
 		// Master Routes
@@ -182,37 +185,29 @@ func getHRRoutes(
 		Route{"HR", http.MethodDelete, constant.DeleteAssessment, assessmentController.DeleteAssessment},
 		Route{"HR", http.MethodDelete, constant.DeleteUser, adminController.DeleteUser},
 		Route{"HR", http.MethodGet, constant.Dashboard, adminController.GetDashboard},
+		Route{"HR", http.MethodGet, constant.Reviewers, adminController.GetReviewers},
+		Route{"HR", http.MethodPost, constant.AssignReviewer, adminController.AssignAssessmentToReviewer},
 	}
 }
 
-func getQuestionAuthorRoutes(	adminController *controller.AdminController,assessmentController *controller.AssessmentController,mastersController *controller.MastersController,) Routes {
+func getQuestionAuthorRoutes(adminController *controller.AdminController, assessmentController *controller.AssessmentController, mastersController *controller.MastersController) Routes {
 
 	return Routes{
 
-	
-
 		Route{"Question Author", http.MethodPost, constant.Assessments, adminController.GetAssessments},
 		Route{"Question Author", http.MethodGet, constant.Assessment, assessmentController.GetAssessment},
-
+		Route{"Question Author", http.MethodGet, constant.Reviewers, adminController.GetReviewers},
+		Route{"Question Author", http.MethodPost, constant.AssignReviewer, adminController.AssignAssessmentToReviewer},
 		Route{"Question Author", http.MethodPost, constant.Assessment, assessmentController.CreateAssessment},
-
 		Route{"Question Author", http.MethodPut, constant.Assessment, adminController.UpdateAssessment},
-
 		Route{"Question Author", http.MethodPost, constant.AssessmentDuplicate, assessmentController.DuplicateAssessment},
-
 		Route{"Question Author", http.MethodPost, constant.DistributeAssessmentManager, adminController.DistributeAssessmentToManagerController},
 		Route{"Question Author", http.MethodPost, constant.Questions, adminController.GetQuestionsController},
-
 		Route{"Question Author", http.MethodPost, constant.Question, adminController.CreateMultipleQuestions},
-
 		Route{"Question Author", http.MethodPost, constant.GenerateAssessment, assessmentController.GenerateAssessmentWithAI},
-
 		Route{"Question Author", http.MethodPost, constant.SaveGeneratedAssessment, assessmentController.SaveGeneratedAssessment},
-
 		Route{"Question Author", http.MethodPost, constant.ImportAssessment, assessmentController.UploadAssessment},
-
 		Route{"Question Author", http.MethodPost, constant.JobDescriptions, adminController.GetJobDescriptions},
-
 		Route{"Question Author", http.MethodPost, constant.Users, adminController.GetUsers},
 	}
 }
@@ -226,7 +221,6 @@ func getReviewerRoutes(adminController *controller.AdminController) Routes {
 		Route{"Reviewer", http.MethodPost, constant.Assessments, adminController.GetManagerAssessments},
 
 		Route{"Reviewer", http.MethodGet, constant.Assessment, adminController.GetManagerAssessments},
-
 	}
 }
 

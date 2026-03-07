@@ -10,7 +10,7 @@ import (
 	"log"
 	"strings"
 	"time"
- 
+
 	"gorm.io/gorm"
 )
 
@@ -81,6 +81,9 @@ type AssessmentRepository interface {
 	GetAdminAssessmentUserResult(assessmentSeq string, userId string) ([]map[string]interface{}, error)
 	CheckUserAssignment(assessmentSeq string, userIDs []string) ([]models.AssessmentStatus, error)
 	DeleteAssessment(assessmentSeq string) error
+
+	GetReviewers() ([]models.UserModel, error)
+	AssignAssessmentToReviewer(reviewerID string, assessmentSeq string, createdBy string) error
 }
 
 type AssessmentRepositoryImpl struct {
@@ -744,63 +747,65 @@ func (r *AssessmentRepositoryImpl) GetAssessmentsWithPagination(limit int, offse
 	}
 
 	query := `
-    SELECT 
-        am.assessment_id,
-        am.assessment_sequence,
-        am.assessment_desc AS assessment_title,
-        am.assessment_type,  
-        sse.time_limit,
-        am.marks,
-        am.valid_to AS deadline,
-        sse.state,
-        jd.title AS job_title,              
-        dc.center_name,
-        dsl.name AS service_line_name,
-        dbp.name AS business_partner_name,
-        dsbp.name AS sub_business_partner_name,
-        dsg.name AS service_group_name,
-        ds.service_name AS service_name
+ SELECT 
+    am.assessment_id,
+    am.assessment_sequence,
+    am.assessment_desc AS assessment_title,
+    am.assessment_type,  
+    sse.time_limit,
+    am.marks,
+    am.valid_to AS deadline,
+    sse.state,
+    jd.title AS job_title,              
 
-    FROM assessment_mst am
+    dc.center_name,
+    dsl.name AS service_line_name,
+    dbp.name AS business_partner_name,
+    dsbp.name AS sub_business_partner_name,
+    dsg.name AS service_group_name,
+    ds.service_name AS service_name,
 
-    JOIN dhl_survey_survey_ext sse 
-        ON am.assessment_sequence = sse.assessment_sequence
+    CONCAT(au.first_name,' ',au.last_name) AS assigned_reviewer,
 
-    LEFT JOIN job_descriptions jd              
-        ON am.job_id = jd.job_id               
+    CASE 
+        WHEN ram.reviewer_id IS NULL THEN 'Not Assigned'
+        WHEN ram.review_status IS NULL THEN 'Under Review'
+        WHEN ram.review_status = 'approved' THEN 'Approved'
+        WHEN ram.review_status = 'rejected' THEN 'Rejected'
+        ELSE ram.review_status
+    END AS review_status,
 
-    LEFT JOIN dhl_center dc
-        ON dc.center_id = sse.center_id
-    LEFT JOIN dhl_service_line dsl
-        ON dsl.service_line_id = sse.service_line_id
-    LEFT JOIN dhl_business_partner dbp
-        ON dbp.business_partner_id = sse.business_partner_id
-    LEFT JOIN dhl_sub_business_partner dsbp
-        ON dsbp.sub_business_partner_id = sse.sub_business_partner_id
-    LEFT JOIN dhl_service_group dsg
-        ON dsg.service_grp_id = sse.service_group_id
-    LEFT JOIN dhl_service ds
-        ON ds.service_id = sse.service_id
+    ram.reviewer_note
 
-    GROUP BY 
-        am.assessment_id,
-        am.assessment_sequence,
-        am.assessment_desc,
-        am.assessment_type,
-        sse.time_limit,
-        am.marks,
-        am.valid_to,
-        sse.state,
-        jd.title,
-        dc.center_name,
-        dsl.name,
-        dbp.name,
-        dsbp.name,
-        dsg.name,
-        ds.service_name
+FROM assessment_mst am
+JOIN dhl_survey_survey_ext sse 
+    ON am.assessment_sequence = sse.assessment_sequence
 
-    ORDER BY am.created_on DESC
-    LIMIT ? OFFSET ?
+LEFT JOIN job_descriptions jd              
+    ON am.job_id = jd.job_id  
+
+LEFT JOIN reviewer_assessment_mapping ram
+    ON ram.assessment_sequence = am.assessment_sequence
+    AND ram.is_active = true
+
+LEFT JOIN assessment_user_mst au
+    ON au.user_id = ram.reviewer_id
+
+LEFT JOIN dhl_center dc
+    ON dc.center_id = sse.center_id
+LEFT JOIN dhl_service_line dsl
+    ON dsl.service_line_id = sse.service_line_id
+LEFT JOIN dhl_business_partner dbp
+    ON dbp.business_partner_id = sse.business_partner_id
+LEFT JOIN dhl_sub_business_partner dsbp
+    ON dsbp.sub_business_partner_id = sse.sub_business_partner_id
+LEFT JOIN dhl_service_group dsg
+    ON dsg.service_grp_id = sse.service_group_id
+LEFT JOIN dhl_service ds
+    ON ds.service_id = sse.service_id
+
+ORDER BY am.created_on DESC
+LIMIT ? OFFSET ?
     `
 
 	if err := r.db.Raw(query, limit, offset).Scan(&assessments).Error; err != nil {
@@ -2290,4 +2295,35 @@ func (r *AssessmentRepositoryImpl) DeleteAssessment(assessmentSeq string) error 
 	}
 
 	return tx.Commit().Error
+}
+
+func (r *AssessmentRepositoryImpl) GetReviewers() ([]models.UserModel, error) {
+
+	var users []models.UserModel
+
+	err := r.db.
+		Table("assessment_user_mst u").
+		Select("u.user_id, u.first_name, u.last_name, u.email").
+		Joins("JOIN assessment_user_role_mapping rm ON rm.user_id = u.user_id").
+		Joins("JOIN assessment_user_role_mst r ON r.role_id = rm.role_id").
+		Where("r.role_label = ?", "reviewer").
+		Where("u.is_active = true").
+		Find(&users).Error
+
+	return users, err
+}
+
+func (r *AssessmentRepositoryImpl) AssignAssessmentToReviewer(
+	reviewerID string,
+	assessmentSeq string,
+	createdBy string,
+) error {
+
+	query := `
+	INSERT INTO reviewer_assessment_mapping
+	(reviewer_id, assessment_sequence, review_status, created_by, created_on)
+	VALUES (?, ?, 'under_review', ?, NOW())
+	`
+
+	return r.db.Exec(query, reviewerID, assessmentSeq, createdBy).Error
 }

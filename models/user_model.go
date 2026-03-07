@@ -74,6 +74,13 @@ func (DhlAssessmentUserMstExt) TableName() string {
 	return "dhl_assessment_user_mst_ext"
 }
 
+
+type UserModel struct {
+	UserID    string `json:"user_id"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+	Email     string `json:"email"`
+}
 type RegisterRequest struct {
 	ClientName string   `json:"client_name" binding:"required"`
 	FirstName  string   `json:"first_name" binding:"required"`
