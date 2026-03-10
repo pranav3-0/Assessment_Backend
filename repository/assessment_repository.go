@@ -75,6 +75,7 @@ type AssessmentRepository interface {
 	GetTagsByQuestionID(questionID int64) ([]string, error)
 	GetTagsByQuestionIDs(questionIDs []int64) (map[int64][]string, error)
 	GetTagRequestsByQuestionIDs(questionIDs []int64) (map[int64][]models.TagRequest, error)
+	GetJobTitleByID(jobID *int64) (*string, error)
 
 	SavePhoto(assessmentSeq string, userID string, sessionID string, photoData []byte) error
 	SaveVoice(assessmentSeq string, userID string, sessionID string, voiceData []byte) error
@@ -84,6 +85,8 @@ type AssessmentRepository interface {
 
 	GetReviewers() ([]models.UserModel, error)
 	AssignAssessmentToReviewer(reviewerID string, assessmentSeq string, createdBy string) error
+	GetReviewerAssessments(reviewerID string, limit int, offset int) ([]*models.ReviewerAssessmentResponse, int64, error)
+	UpdateReviewStatus(reviewerID string,assessmentSeq string,status string,note *string,) error
 }
 
 type AssessmentRepositoryImpl struct {
@@ -2326,4 +2329,138 @@ func (r *AssessmentRepositoryImpl) AssignAssessmentToReviewer(
 	`
 
 	return r.db.Exec(query, reviewerID, assessmentSeq, createdBy).Error
+}
+
+func (r *AssessmentRepositoryImpl) GetReviewerAssessments(
+	reviewerID string,
+	limit int,
+	offset int,
+) ([]*models.ReviewerAssessmentResponse, int64, error) {
+
+	var assessments []*models.ReviewerAssessmentResponse
+	var total int64
+
+	countQuery := `
+	SELECT COUNT(*)
+	FROM reviewer_assessment_mapping ram
+	WHERE ram.reviewer_id = ?
+	AND ram.is_active = true
+	`
+
+	if err := r.db.Raw(countQuery, reviewerID).Scan(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	query := `
+	SELECT 
+		am.assessment_id,
+		am.assessment_sequence,
+		am.assessment_desc AS assessment_title,
+
+		CONCAT(u.first_name,' ',u.last_name) AS author_name,
+
+		jd.title AS job_title,
+
+		am.marks,
+		sse.time_limit,
+		am.valid_to AS deadline,
+
+		CASE 
+    WHEN ram.review_status IS NULL 
+         OR ram.review_status = 'under_review' 
+    THEN 'Pending Review'
+
+    WHEN ram.review_status = 'approved' 
+    THEN 'Approved'
+
+    WHEN ram.review_status = 'rejected' 
+    THEN 'Rejected'
+
+    ELSE 'Pending Review'
+    END AS review_status
+
+	FROM reviewer_assessment_mapping ram
+
+	JOIN assessment_mst am
+	ON am.assessment_sequence = ram.assessment_sequence
+
+	JOIN dhl_survey_survey_ext sse
+	ON sse.assessment_sequence = am.assessment_sequence
+
+	LEFT JOIN assessment_user_mst u
+	ON u.user_id::text = am.created_by
+
+	LEFT JOIN job_descriptions jd
+	ON jd.job_id = am.job_id
+
+	WHERE ram.reviewer_id = ?
+	AND ram.is_active = true
+
+	ORDER BY am.created_on DESC
+	LIMIT ? OFFSET ?
+	`
+
+	if err := r.db.Raw(query, reviewerID, limit, offset).Scan(&assessments).Error; err != nil {
+		return nil, 0, err
+	}
+
+	for i := range assessments {
+
+		tags, err := r.GetTagsByAssessmentSequence(
+			assessments[i].AssessmentSequence,
+		)
+
+		if err == nil && len(tags) > 0 {
+
+			assessments[i].Subject = &tags[0].ParentTag
+
+			var topics []string
+
+			for _, t := range tags {
+				topics = append(topics, t.ChildTags...)
+			}
+
+			assessments[i].Topics = topics
+		}
+	}
+
+	return assessments, total, nil
+}
+
+
+func (r *AssessmentRepositoryImpl) GetJobTitleByID(jobID *int64) (*string, error) {
+
+	if jobID == nil {
+		return nil, nil
+	}
+
+	var title string
+
+	err := r.db.Table("job_descriptions").
+		Select("title").
+		Where("job_id = ?", *jobID).
+		Scan(&title).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &title, nil
+}
+
+func (r *AssessmentRepositoryImpl) UpdateReviewStatus(
+	reviewerID string,
+	assessmentSeq string,
+	status string,
+	note *string,
+) error {
+
+	query := `
+	UPDATE reviewer_assessment_mapping
+	SET review_status = ?, reviewer_note = ?
+	WHERE assessment_sequence = ?
+	AND is_active = true
+	`
+
+	return r.db.Exec(query, status, note, assessmentSeq).Error
 }

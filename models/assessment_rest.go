@@ -42,6 +42,7 @@ type AssessmentResponse struct {
 	Questions             []AssessmentQuestion `json:"questions"`
 	SessionImage          []byte               `json:"session_image,omitempty"`
 	Tags                  []TagRequest         `json:"tags,omitempty"`
+	JobTitle              *string              `json:"job_title"`
 }
 
 type AssessmentQuestion struct {

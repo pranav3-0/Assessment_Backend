@@ -36,6 +36,7 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	var assessmentService = services.NewAssessmentService(assessmentRepo, db, activityRepo)
 	var geminiService = services.NewGeminiService()
 	var contactService = services.NewContactService(contactRepo)
+	var reviewerController = controller.NewReviewerController(assessmentService)
 	var dhlBusinessPartnerService = services.NewDHLBusinessPartnerService(dhlBusinessPartnerRepository)
 	var dhlCenterService = services.NewDHLCenterService(dhlCenterRepository)
 	var dhlResCompanyService = services.NewDHLResCompanyService(dhlResCompanyRepository)
@@ -64,7 +65,7 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	QuestionAuthorRoutes(apiGroup, adminController, assessmentController, mastersController)
 	AssessmentRoutes(apiGroup, assessmentController)
 	OpenRoutes(apiGroup, publicController, adminController)
-	ReviewerRoutes(apiGroup, adminController)
+	ReviewerRoutes(apiGroup, reviewerController, assessmentController)
 }
 
 func getAdminRoutes(adminController *controller.AdminController, assessmentController *controller.AssessmentController, mastersController *controller.MastersController) Routes {
@@ -212,15 +213,13 @@ func getQuestionAuthorRoutes(adminController *controller.AdminController, assess
 	}
 }
 
-func getReviewerRoutes(adminController *controller.AdminController) Routes {
+func getReviewerRoutes(reviewerController *controller.ReviewerController, assessmentController *controller.AssessmentController) Routes {
 
 	return Routes{
 
-		// Structure only (no API logic yet)
-
-		Route{"Reviewer", http.MethodPost, constant.Assessments, adminController.GetManagerAssessments},
-
-		Route{"Reviewer", http.MethodGet, constant.Assessment, adminController.GetManagerAssessments},
+		Route{"Reviewer", http.MethodGet, constant.ReviewerAssessments, reviewerController.GetReviewerAssessments},
+		Route{"Reviewer", http.MethodGet, constant.Assessment, assessmentController.GetAssessment},
+		Route{"Reviewer", http.MethodPost, constant.UpdateReviewStatus, reviewerController.ReviewAssessment},
 	}
 }
 

@@ -49,7 +49,9 @@ type AssessmentService interface {
 	CheckUserAssignment(assessmentSeq string, userIDs []string) ([]models.CheckAssignmentResponse, error)
 	DeleteAssessment(assessmentSeq string) error
 	GetReviewers() ([]models.UserModel, error)
-    AssignAssessmentToReviewer(reviewerID string, assessmentSeq string, createdBy string) error
+	AssignAssessmentToReviewer(reviewerID string, assessmentSeq string, createdBy string) error
+	GetReviewerAssessments(reviewerID string, limit int, offset int) ([]*models.ReviewerAssessmentResponse, int64, error)
+	ReviewAssessment(reviewerID string,assessmentSeq string,status string,note *string,) error
 }
 
 type AssessmentServiceImpl struct {
@@ -75,6 +77,10 @@ func (s *AssessmentServiceImpl) GetAssessment(assessmentSeq string) (*models.Ass
 		return nil, errors.New("assessment not found")
 	}
 
+	jobTitle, err := s.assessmentRepo.GetJobTitleByID(assessment.JobID)
+	if err != nil {
+		return nil, err
+	}
 	assessmentExt, err := s.assessmentRepo.GetDhlSurveyExtByAssmtSeq(assessmentSeq)
 	if err != nil {
 		return nil, err
@@ -153,6 +159,7 @@ func (s *AssessmentServiceImpl) GetAssessment(assessmentSeq string) (*models.Ass
 		ServiceGroupName:    assessmentExt.ServiceGroupName,
 		ServiceName:         assessmentExt.ServiceName,
 		Tags:                tags,
+		JobTitle:            jobTitle,
 	}
 
 	return resp, nil
@@ -1475,7 +1482,6 @@ func (s *AssessmentServiceImpl) DeleteAssessment(assessmentSeq string) error {
 	return nil
 }
 
-
 func (s *AssessmentServiceImpl) GetReviewers() ([]models.UserModel, error) {
 	return s.assessmentRepo.GetReviewers()
 }
@@ -1490,5 +1496,37 @@ func (s *AssessmentServiceImpl) AssignAssessmentToReviewer(
 		reviewerID,
 		assessmentSeq,
 		createdBy,
+	)
+}
+
+func (s *AssessmentServiceImpl) GetReviewerAssessments(
+	reviewerID string,
+	limit int,
+	offset int,
+) ([]*models.ReviewerAssessmentResponse, int64, error) {
+
+	return s.assessmentRepo.GetReviewerAssessments(
+		reviewerID,
+		limit,
+		offset,
+	)
+}
+
+func (s *AssessmentServiceImpl) ReviewAssessment(
+	reviewerID string,
+	assessmentSeq string,
+	status string,
+	note *string,
+) error {
+
+	if status != "approved" && status != "rejected" {
+		return errors.New("invalid review status")
+	}
+
+	return s.assessmentRepo.UpdateReviewStatus(
+		reviewerID,
+		assessmentSeq,
+		status,
+		note,
 	)
 }

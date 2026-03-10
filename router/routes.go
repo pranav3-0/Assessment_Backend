@@ -179,11 +179,15 @@ func Routing(envFile string) {
 	}
 }
 
-func ReviewerRoutes(g *gin.RouterGroup, adminController *controller.AdminController) {
+func ReviewerRoutes(
+	g *gin.RouterGroup,
+	reviewerController *controller.ReviewerController,
+	assessmentController *controller.AssessmentController,
+) {
 
 	reviewer := g.Group("/reviewer")
 
-	for _, reviewerRoute := range getReviewerRoutes(adminController) {
+	for _, reviewerRoute := range getReviewerRoutes(reviewerController, assessmentController) {
 
 		protectedHandler := auth.Authenticate(
 			reviewer.BasePath()+reviewerRoute.Path,
