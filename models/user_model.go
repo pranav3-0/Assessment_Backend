@@ -163,3 +163,17 @@ type UserFullData struct {
 	Roles         []string `json:"roles"`
 	UserType      string   `json:"user_type"`
 }
+
+type SendOTPRequest struct {
+	Email string `json:"email" binding:"required,email"`
+}
+
+type VerifyOTPRequest struct {
+	Email string `json:"email" binding:"required,email"`
+	OTP   string `json:"otp" binding:"required"`
+}
+
+type VerifyOTPResponse struct {
+	Token  string `json:"token"`
+	UserID string `json:"user_id"`
+}

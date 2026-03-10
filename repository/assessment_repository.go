@@ -86,7 +86,10 @@ type AssessmentRepository interface {
 	GetReviewers() ([]models.UserModel, error)
 	AssignAssessmentToReviewer(reviewerID string, assessmentSeq string, createdBy string) error
 	GetReviewerAssessments(reviewerID string, limit int, offset int) ([]*models.ReviewerAssessmentResponse, int64, error)
-	UpdateReviewStatus(reviewerID string,assessmentSeq string,status string,note *string,) error
+	UpdateReviewStatus(reviewerID string, assessmentSeq string, status string, note *string) error
+
+	GetAssessmentReviewStatus(sequence string) (string, error)
+	StoreAssessmentToken(userID string, sequence string, token string) error
 }
 
 type AssessmentRepositoryImpl struct {
@@ -2427,7 +2430,6 @@ func (r *AssessmentRepositoryImpl) GetReviewerAssessments(
 	return assessments, total, nil
 }
 
-
 func (r *AssessmentRepositoryImpl) GetJobTitleByID(jobID *int64) (*string, error) {
 
 	if jobID == nil {
@@ -2463,4 +2465,61 @@ func (r *AssessmentRepositoryImpl) UpdateReviewStatus(
 	`
 
 	return r.db.Exec(query, status, note, assessmentSeq).Error
+}
+
+func (r *AssessmentRepositoryImpl) GetAssessmentReviewStatus(sequence string) (string, error) {
+
+	var status string
+
+	err := r.db.Raw(`
+		SELECT review_status
+		FROM reviewer_assessment_mapping
+		WHERE assessment_sequence = ?
+		AND is_active = true
+		LIMIT 1
+	`, sequence).Scan(&status).Error
+
+	if err != nil {
+		return "", err
+	}
+
+	return status, nil
+}
+
+func (r *AssessmentRepositoryImpl) StoreAssessmentToken(userID string, sequence string, token string) error {
+
+	query := `
+	INSERT INTO assessment_verification
+	(user_id, assessment_sequence, access_token, created_on)
+	VALUES ($1,$2,$3,NOW())
+	`
+
+	return r.db.Exec(query, userID, sequence, token).Error
+}
+
+func (r *AssessmentRepositoryImpl) ValidateAssessmentToken(token string) (bool, error) {
+
+	var count int
+
+	err := r.db.Raw(`
+		SELECT COUNT(*)
+		FROM assessment_verification
+		WHERE access_token = ?
+		AND is_used = false
+	`, token).Scan(&count).Error
+
+	if err != nil {
+		return false, err
+	}
+
+	return count > 0, nil
+}
+
+func (r *AssessmentRepositoryImpl) MarkTokenUsed(token string) error {
+
+	return r.db.Exec(`
+		UPDATE assessment_verification
+		SET is_used = true
+		WHERE access_token = ?
+	`, token).Error
 }

@@ -26,6 +26,17 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	var dhlServiceLineRepository = repository.NewDHLServiceLineRepository(db)
 	var dhlSubBusinessPartnerRepository = repository.NewDHLSubBusinessPartnerRepository(db)
 	var dhlSubServiceRepository = repository.NewDHLSubServiceRepository(db)
+	var authRepo = repository.NewAuthRepository(db)
+
+	var notificationService = services.NewNotificationService(userRepo, assessmentRepo)
+
+	var authService = services.NewAuthService(
+		userRepo,
+		clientRepo,
+		authRepo,
+		notificationService,
+		db,
+	)
 
 	var jobRepo = repository.NewJobDescriptionRepository(db)
 	var jobService = services.NewJobDescriptionService(jobRepo, db, activityRepo)
@@ -47,15 +58,13 @@ func InitializeRoutes(apiGroup *gin.RouterGroup, db *gorm.DB) {
 	var dhlServiceLineService = services.NewDHLServiceLineService(dhlServiceLineRepository)
 	var dhlSubBusinessPartnerService = services.NewDHLSubBusinessPartnerService(dhlSubBusinessPartnerRepository)
 	var dhlSubServiceService = services.NewDHLSubServiceService(dhlSubServiceRepository)
-	var notificationService = services.NewNotificationService(userRepo, assessmentRepo)
-	var authService = services.NewAuthService(userRepo, clientRepo, notificationService, db)
 	var dashboardRepo = repository.NewDashboardRepository(db)
 	var dashboardService = services.NewDashboardService(dashboardRepo)
 
 	var userController = controller.NewUserController(userService, authService)
 	var adminController = controller.NewAdminController(userService, authService, assessmentService, notificationService, contactService, jobService, questionService, dashboardService)
 	var assessmentController = controller.NewAssessmentController(assessmentService, userService, geminiService)
-	var publicController = controller.NewPublicController(contactService)
+	var publicController = controller.NewPublicController(contactService, authService)
 	var mastersController = controller.NewMastersController(dhlBusinessPartnerService, dhlCenterService, dhlResCompanyService,
 		dhlResPartnerIndustryService, dhlServiceService, dhlServiceGroupService, dhlServiceLineService, dhlSubBusinessPartnerService, dhlSubServiceService)
 
@@ -98,6 +107,7 @@ func getAdminRoutes(adminController *controller.AdminController, assessmentContr
 		Route{"Admin", http.MethodDelete, constant.DeleteAssessment, assessmentController.DeleteAssessment},
 		Route{"Admin", http.MethodDelete, constant.DeleteUser, adminController.DeleteUser},
 		Route{"Admin", http.MethodGet, constant.Dashboard, adminController.GetDashboard},
+		Route{"Admin", http.MethodPost, constant.GenerateAssessmentLink, assessmentController.GenerateAssessmentLink},
 
 		Route{"Admin", http.MethodGet, constant.Reviewers, adminController.GetReviewers},
 		Route{"Admin", http.MethodPost, constant.AssignReviewer, adminController.AssignAssessmentToReviewer},
@@ -255,5 +265,7 @@ func getOpenRoutes(publicController *controller.PublicController, adminControlle
 		Route{"Admin", http.MethodPost, constant.MigrateKeycloak, adminController.MigrateUsersToKeycloak},
 		Route{"Admin", http.MethodPost, constant.MigrateRolesKeycloak, adminController.MigrateRoleToKeycloak},
 		Route{"Admin", http.MethodPost, constant.MigrateNotify, adminController.CreateUsersOnNotify},
+		Route{"Public", http.MethodPost, constant.SendOTP, publicController.SendOTP},
+		Route{"Public", http.MethodPost, constant.VerifyOTP, publicController.VerifyOTP},
 	}
 }

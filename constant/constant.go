@@ -62,6 +62,9 @@ const (
 	AssignReviewer              = "/assign-reviewer"
 	ReviewerAssessments         = "/reviewer-assessments"
 	UpdateReviewStatus          = "/review-assessment"
+	GenerateAssessmentLink      = "/generate-assessment-link"
+	SendOTP                     = "/send-otp"
+	VerifyOTP                   = "/verify-otp"
 )
 
 type UserRole string

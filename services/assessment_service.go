@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"strconv"
 	"time"
+	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/xuri/excelize/v2"
@@ -52,6 +53,7 @@ type AssessmentService interface {
 	AssignAssessmentToReviewer(reviewerID string, assessmentSeq string, createdBy string) error
 	GetReviewerAssessments(reviewerID string, limit int, offset int) ([]*models.ReviewerAssessmentResponse, int64, error)
 	ReviewAssessment(reviewerID string,assessmentSeq string,status string,note *string,) error
+	GenerateAssessmentLink(userID string, assessmentSequence string) (string, error)
 }
 
 type AssessmentServiceImpl struct {
@@ -1529,4 +1531,31 @@ func (s *AssessmentServiceImpl) ReviewAssessment(
 		status,
 		note,
 	)
+}
+
+func (s *AssessmentServiceImpl) GenerateAssessmentLink(userID string, sequence string) (string, error) {
+
+	status, err := s.assessmentRepo.GetAssessmentReviewStatus(sequence)
+	if err != nil {
+		return "", err
+	}
+
+	if status != "approved" {
+		return "", errors.New("assessment not approved")
+	}
+
+	token := utils.GenerateToken()
+
+	err = s.assessmentRepo.StoreAssessmentToken(userID, sequence, token)
+	if err != nil {
+		return "", err
+	}
+
+	link := fmt.Sprintf(
+		"http://localhost:5173/assessment/%s/verify?token=%s",
+		sequence,
+		token,
+	)
+
+	return link, nil
 }

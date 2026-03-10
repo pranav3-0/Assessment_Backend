@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"log"
 	"net/smtp"
+	"os"
 )
 
 // SMTP Config
@@ -47,4 +48,25 @@ func SendEmail(cfg EmailConfig, to, subject, templateFile string, data interface
 
 	// Important: From must match SMTP Username
 	return smtp.SendMail(address, auth, cfg.Username, []string{to}, msg)
+}
+
+func SendEmailOTP(email string, otp string) error {
+
+	from := os.Getenv("SMTP_EMAIL")
+	password := os.Getenv("SMTP_PASSWORD")
+
+	smtpHost := "smtp.gmail.com"
+	smtpPort := "587"
+
+	message := []byte("Subject: DHL Assessment OTP\n\nYour OTP is: " + otp)
+
+	auth := smtp.PlainAuth("", from, password, smtpHost)
+
+	return smtp.SendMail(
+		smtpHost+":"+smtpPort,
+		auth,
+		from,
+		[]string{email},
+		message,
+	)
 }

@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"crypto/rand"
 	"dhl/models"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -10,6 +12,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	
 
 	"github.com/gin-gonic/gin"
 	"github.com/xuri/excelize/v2"
@@ -310,6 +313,7 @@ func ParseQuestionnaireExcelToJSON(file multipart.File, filename string) (*model
 
 	return assessment, nil
 }
+
 var QuestionTypeMap = map[string]int{
 	"simple_choice":   1,
 	"multiple_choice": 2,
@@ -338,4 +342,25 @@ func resolveHighestRole(roles []string) string {
 		}
 	}
 	return highestRole
+}
+
+func GenerateToken() string {
+	bytes := make([]byte, 16)
+	rand.Read(bytes)
+	return hex.EncodeToString(bytes)
+}
+
+func GenerateOTP() string {
+
+	b := make([]byte, 3)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "000000"
+	}
+
+	num := int(b[0])<<16 | int(b[1])<<8 | int(b[2])
+	otp := num % 900000
+	otp += 100000
+
+	return fmt.Sprintf("%06d", otp)
 }

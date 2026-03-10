@@ -11,11 +11,19 @@ import (
 )
 
 type PublicController struct {
-	service services.ContactService
+	service     services.ContactService
+	authService services.AuthService
 }
 
-func NewPublicController(service services.ContactService) *PublicController {
-	return &PublicController{service}
+func NewPublicController(
+	service services.ContactService,
+	authService services.AuthService,
+) *PublicController {
+
+	return &PublicController{
+		service:     service,
+		authService: authService,
+	}
 }
 
 func (cc *PublicController) SubmitContactFormController(ctx *gin.Context) {
@@ -39,4 +47,45 @@ func (cc *PublicController) SubmitContactFormController(ctx *gin.Context) {
 
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Submitted successfully", nil, nil, nil)
 	return
+}
+
+func (pc *PublicController) SendOTP(ctx *gin.Context) {
+
+	var req models.SendOTPRequest
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusBadRequest, "Invalid request", nil, err)
+		return
+	}
+
+	err := pc.authService.SendOTP(req.Email)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusInternalServerError, err.Error(), nil, err)
+		return
+	}
+
+	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "OTP sent successfully", nil, nil, nil)
+}
+
+func (pc *PublicController) VerifyOTP(ctx *gin.Context) {
+
+	var req models.VerifyOTPRequest
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusBadRequest, "Invalid request", nil, err)
+		return
+	}
+
+	token, userID, err := pc.authService.VerifyOTP(req.Email, req.OTP)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
+		return
+	}
+
+	res := models.VerifyOTPResponse{
+		Token:  token,
+		UserID: userID,
+	}
+
+	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "OTP verified", res, nil, nil)
 }

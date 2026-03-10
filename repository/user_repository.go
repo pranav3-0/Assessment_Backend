@@ -3,11 +3,12 @@ package repository
 import (
 	"context"
 	"dhl/models"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
-     "errors"
+
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -24,11 +25,13 @@ type UserRepository interface {
 	FetchUsersManagedBy(offset, limit int, managerID string, role *string) ([]models.UserFullData, int64, error)
 	FetchAllUsers(userIds []*string) ([]models.UserWithRoles, error)
 	DeleteUser(userID uuid.UUID) error
-	 GetUserSkills(userID string) ([]string, error)
+	GetUserSkills(userID string) ([]string, error)
 	GetUserAverageScore(userID string) (float64, error)
 	GetUserGlobalRank(userID string) (int, error)
 	GetUserAchievements(userID string) ([]string, error)
 	GetUserPerformance(userID string) (PerformanceSummary, error)
+	FindUserByEmail(email string) (*models.AssessmentUser, error)
+	CreatePublicUser(userID string, email string) error
 }
 
 type UserRepositoryImpl struct {
@@ -39,6 +42,7 @@ type PerformanceSummary struct {
 	TotalObtained float64 `gorm:"column:total_obtained"`
 	TotalPossible float64 `gorm:"column:total_possible"`
 }
+
 func NewUserRepository(db *gorm.DB) UserRepository {
 	if db == nil {
 		panic("database instance is null")
@@ -124,15 +128,15 @@ SELECT
 
 	result := r.db.Raw(query, username).Scan(&user)
 
-if result.Error != nil {
-    return user, result.Error
-}
+	if result.Error != nil {
+		return user, result.Error
+	}
 
-if result.RowsAffected == 0 {
-    return user, errors.New("user not found")
-}
+	if result.RowsAffected == 0 {
+		return user, errors.New("user not found")
+	}
 
-return user, nil
+	return user, nil
 }
 
 func (r *UserRepositoryImpl) FindByUserId(userId string) (models.AssessmentUser, error) {
@@ -381,7 +385,6 @@ func (r *UserRepositoryImpl) FetchAllUsers(userIds []*string) ([]models.UserWith
 func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, role *string) ([]models.UserFullData, int64, error) {
 	var total int64
 
-	
 	countQuery := `
 		SELECT COUNT(*) 
 		FROM public.assessment_user_mst u
@@ -473,7 +476,6 @@ func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, ro
 
 	params = append(params, limit, offset)
 
-
 	type userRow struct {
 		UserID        string
 		FirstName     string
@@ -501,7 +503,6 @@ func (r *UserRepositoryImpl) FetchAllUsersWithExtPaginated(offset, limit int, ro
 	if err := r.db.Raw(query, params...).Scan(&rows).Error; err != nil {
 		return nil, 0, err
 	}
-
 
 	var users []models.UserFullData
 
@@ -807,4 +808,36 @@ func (r *UserRepositoryImpl) GetUserAchievements(userID string) ([]string, error
 	}
 
 	return achievements, nil
+}
+
+
+func (r *UserRepositoryImpl) FindUserByEmail(email string) (*models.AssessmentUser, error) {
+
+	var user models.AssessmentUser
+
+	err := r.db.Raw(`
+		SELECT user_id,email
+		FROM assessment_user_mst
+		WHERE email = ?
+		LIMIT 1
+	`, email).Scan(&user).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	if user.UserID == uuid.Nil {
+		return nil, errors.New("user not found")
+	}
+
+	return &user, nil
+}
+
+func (r *UserRepositoryImpl) CreatePublicUser(userID string, email string) error {
+
+	return r.db.Exec(`
+		INSERT INTO assessment_user_mst
+		(user_id,email,username,user_type,is_active,created_at)
+		VALUES (?, ?, ?, 'candidate', true, NOW())
+	`, userID, email, email).Error
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"dhl/models"
 	"dhl/repository"
+	"dhl/utils"
 	"errors"
 	"fmt"
 
@@ -15,17 +16,33 @@ import (
 type AuthService interface {
 	RegisterUser(ctx context.Context, req models.RegisterRequest) (*models.AssessmentUser, error)
 	LoginUser(ctx context.Context, req models.LoginRequest) (*models.LoginResponse, error)
+	SendOTP(email string) error
+	VerifyOTP(email string, otp string) (string, string, error)
 }
 
 type AuthServiceImpl struct {
 	userRepo            repository.UserRepository
 	clientRepo          repository.ClientRepository
+	authRepo            repository.AuthRepository
 	notificationService NotificationService
 	db                  *gorm.DB
 }
 
-func NewAuthService(userRepo repository.UserRepository, clientRepo repository.ClientRepository, notificationService NotificationService, db *gorm.DB) AuthService {
-	return &AuthServiceImpl{userRepo: userRepo, clientRepo: clientRepo, notificationService: notificationService, db: db}
+func NewAuthService(
+	userRepo repository.UserRepository,
+	clientRepo repository.ClientRepository,
+	authRepo repository.AuthRepository,
+	notificationService NotificationService,
+	db *gorm.DB,
+) AuthService {
+
+	return &AuthServiceImpl{
+		userRepo:            userRepo,
+		clientRepo:          clientRepo,
+		authRepo:            authRepo,
+		notificationService: notificationService,
+		db:                  db,
+	}
 }
 
 func (s *AuthServiceImpl) RegisterUser(ctx context.Context, req models.RegisterRequest) (*models.AssessmentUser, error) {
@@ -121,4 +138,49 @@ func (s *AuthServiceImpl) LoginUser(ctx context.Context, req models.LoginRequest
 
 	return &response, nil
 
+}
+
+func (s *AuthServiceImpl) SendOTP(email string) error {
+
+	otp := utils.GenerateOTP()
+
+	err := s.authRepo.SaveOTP(email, otp)
+	if err != nil {
+		return err
+	}
+
+	return utils.SendEmailOTP(email, otp)
+}
+
+func (s *AuthServiceImpl) VerifyOTP(email string, otp string) (string, string, error) {
+
+	valid, err := s.authRepo.ValidateOTP(email, otp)
+	if err != nil {
+		return "", "", err
+	}
+
+	if !valid {
+		return "", "", errors.New("invalid otp")
+	}
+
+	user, err := s.userRepo.FindUserByEmail(email)
+
+	if err != nil {
+
+		newUserID := uuid.New()
+
+		err = s.userRepo.CreatePublicUser(newUserID.String(), email)
+		if err != nil {
+			return "", "", err
+		}
+
+		user = &models.AssessmentUser{
+			UserID: newUserID,
+			Email:  email,
+		}
+	}
+
+	token := utils.GenerateToken()
+
+	return token, user.UserID.String(), nil
 }

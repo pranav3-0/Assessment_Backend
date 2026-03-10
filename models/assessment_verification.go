@@ -12,3 +12,11 @@ type AssessmentVerification struct {
     CreatedOn          time.Time  `json:"created_on" gorm:"column:created_on"`
     UpdatedOn          time.Time  `json:"updated_on" gorm:"column:updated_on"`
 }
+
+type GenerateAssessmentLinkRequest struct {
+	AssessmentSequence string `json:"assessment_sequence" binding:"required"`
+}
+
+type GenerateAssessmentLinkResponse struct {
+	Link string `json:"link"`
+}

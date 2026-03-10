@@ -527,3 +527,31 @@ func (c *AssessmentController) DeleteAssessment(ctx *gin.Context) {
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "Assessment deleted successfully"})
 }
+
+func (ac *AssessmentController) GenerateAssessmentLink(ctx *gin.Context) {
+
+	_, userID, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
+		return
+	}
+
+	var req models.GenerateAssessmentLinkRequest
+
+	if err := ctx.ShouldBindJSON(&req); err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusBadRequest, "Invalid request", nil, err)
+		return
+	}
+
+	link, err := ac.assessmentService.GenerateAssessmentLink(userID, req.AssessmentSequence)
+	if err != nil {
+		models.ErrorResponse(ctx, constant.Failure, http.StatusInternalServerError, err.Error(), nil, err)
+		return
+	}
+
+	res := models.GenerateAssessmentLinkResponse{
+		Link: link,
+	}
+
+	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Assessment link generated", res, nil, nil)
+}
