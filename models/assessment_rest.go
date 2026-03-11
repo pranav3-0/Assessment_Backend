@@ -5,9 +5,9 @@ import (
 )
 
 type GetAssessmentRequest struct {
-	AssessmentId string `json:"assessment_sequence"`
-	SessionID    string `json:"session_id"`
-	UserId       string `json:"-"`
+    AssessmentId string `json:"assessment_sequence"`
+    SessionID    string `json:"session_id"`
+    UserId       string `json:"user_id"`
 }
 
 type DuplicateAssessmentRequest struct {
@@ -212,6 +212,7 @@ type UpdateAssessmentStatusRequest struct {
 type SubmitUserAssessmentRequest struct {
 	AssessmentSequence string         `json:"assessment_sequence" binding:"required"`
 	SessionID          string         `json:"session_id" binding:"required"`
+	UserId             string             `json:"user_id"`
 	Response           []UserResponse `json:"response"`
 }
 
@@ -291,6 +292,7 @@ type SaveGeneratedAssessmentRequest struct {
 
 type StartAssessmentRequest struct {
 	AssessmentSequence string `json:"assessment_sequence" binding:"required"`
+	UserId             string `json:"user_id"`
 }
 
 type StartAssessmentResponse struct {

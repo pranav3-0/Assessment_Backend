@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/Nerzal/gocloak/v13"
 )
@@ -118,7 +119,6 @@ func (kc *KeycloakService) UpdateUserInKeycloak(keycloakUserID string, userData 
 		return fmt.Errorf("failed to update keycloak user: %w", err)
 	}
 
-	// 🔹 If roles provided, update realm-level roles
 	if len(roles) > 0 {
 		allRoles, err := client.GetRealmRoles(ctx, token.AccessToken, config.KeycloakRealm, gocloak.GetRoleParams{})
 		if err != nil {
@@ -186,4 +186,45 @@ func (k *KeycloakService) MigrateRoles(roles []string) {
 			continue
 		}
 	}
+}
+
+// cachedPublicToken holds the shared Keycloak token for the public assessment flow
+// so we don't call Keycloak on every student OTP verification
+var (
+	cachedPublicToken     string
+	cachedPublicTokenExp  int64 // unix timestamp when token expires
+)
+
+// GetPublicAssessmentToken returns a cached Keycloak token for the public assessment
+// service account. Refreshes automatically 60 seconds before expiry.
+// Safe for concurrent use — worst case two goroutines refresh at the same time,
+// which is fine since both get valid tokens.
+func GetPublicAssessmentToken() (string, error) {
+	// Return cached token if still valid (with 60s buffer before expiry)
+	if cachedPublicToken != "" && time.Now().Unix() < cachedPublicTokenExp-60 {
+		return cachedPublicToken, nil
+	}
+
+	username := os.Getenv("PUBLIC_ASSESSMENT_USERNAME")
+	password := os.Getenv("PUBLIC_ASSESSMENT_PASSWORD")
+	keycloakAuthURL := os.Getenv("KEYCLOAK_AUTH_URL")
+	realm := os.Getenv("KEYCLOAK_REALM")
+	clientID := os.Getenv("KEYCLOAK_CLIENT_ID")
+	clientSecret := os.Getenv("KEYCLOAK_CLIENT_SECRET")
+
+	ctx := context.Background()
+	client := gocloak.NewClient(keycloakAuthURL)
+
+	jwt, err := client.Login(ctx, clientID, clientSecret, realm, username, password)
+	if err != nil {
+		return "", fmt.Errorf("failed to get public assessment token: %w", err)
+	}
+
+	// Cache the token with its expiry time
+	cachedPublicToken = jwt.AccessToken
+	cachedPublicTokenExp = time.Now().Unix() + int64(jwt.ExpiresIn)
+
+	log.Printf("[PUBLIC TOKEN] Refreshed Keycloak public assessment token, expires in %d seconds", jwt.ExpiresIn)
+
+	return cachedPublicToken, nil
 }

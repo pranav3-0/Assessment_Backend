@@ -827,12 +827,11 @@ func (r *UserRepositoryImpl) FindUserByEmail(email string) (*models.AssessmentUs
 	}
 
 	if user.UserID == uuid.Nil {
-		return nil, errors.New("user not found")
+		return nil, nil
 	}
 
 	return &user, nil
 }
-
 func (r *UserRepositoryImpl) CreatePublicUser(userID string, email string) error {
 
 	return r.db.Exec(`

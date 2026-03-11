@@ -35,7 +35,6 @@ func NewAuthService(
 	notificationService NotificationService,
 	db *gorm.DB,
 ) AuthService {
-
 	return &AuthServiceImpl{
 		userRepo:            userRepo,
 		clientRepo:          clientRepo,
@@ -79,7 +78,7 @@ func (s *AuthServiceImpl) RegisterUser(ctx context.Context, req models.RegisterR
 	if err == nil {
 		user.NotifyId = notifyId.String()
 	}
-	// Save to DB
+
 	tx := s.db.Begin()
 	if err := s.userRepo.CreateUser(tx, ctx, user, req.Roles); err != nil {
 		tx.Rollback()
@@ -124,6 +123,7 @@ func (s *AuthServiceImpl) LoginUser(ctx context.Context, req models.LoginRequest
 	default:
 		return nil, errors.New("unsupported authentication type")
 	}
+
 	response.User = &models.UserWithRoles{
 		UserID:     user.UserID,
 		FirstName:  user.FirstName,
@@ -137,11 +137,9 @@ func (s *AuthServiceImpl) LoginUser(ctx context.Context, req models.LoginRequest
 	}
 
 	return &response, nil
-
 }
 
 func (s *AuthServiceImpl) SendOTP(email string) error {
-
 	otp := utils.GenerateOTP()
 
 	err := s.authRepo.SaveOTP(email, otp)
@@ -153,34 +151,32 @@ func (s *AuthServiceImpl) SendOTP(email string) error {
 }
 
 func (s *AuthServiceImpl) VerifyOTP(email string, otp string) (string, string, error) {
-
 	valid, err := s.authRepo.ValidateOTP(email, otp)
 	if err != nil {
 		return "", "", err
 	}
-
 	if !valid {
 		return "", "", errors.New("invalid otp")
 	}
 
 	user, err := s.userRepo.FindUserByEmail(email)
-
 	if err != nil {
-
 		newUserID := uuid.New()
-
 		err = s.userRepo.CreatePublicUser(newUserID.String(), email)
 		if err != nil {
 			return "", "", err
 		}
-
 		user = &models.AssessmentUser{
 			UserID: newUserID,
 			Email:  email,
 		}
 	}
 
-	token := utils.GenerateToken()
+	
+	token, err := GetPublicAssessmentToken()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to get keycloak token: %w", err)
+	}
 
 	return token, user.UserID.String(), nil
 }

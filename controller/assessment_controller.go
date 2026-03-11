@@ -36,26 +36,31 @@ func (ac *AssessmentController) GetAssessment(ctx *gin.Context) {
 }
 
 func (ac *AssessmentController) GetUserAssessment(ctx *gin.Context) {
-	_, userId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
-	if err != nil {
-		models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
-		return
-	}
-	var req models.GetAssessmentRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		models.ErrorResponse(ctx, "Invalid input", http.StatusBadRequest, err.Error(), nil, err)
-		return
-	}
-	req.UserId = userId
+    var req models.GetAssessmentRequest
+    if err := ctx.ShouldBindJSON(&req); err != nil {
+        models.ErrorResponse(ctx, "Invalid input", http.StatusBadRequest, err.Error(), nil, err)
+        return
+    }
 
-	resp, err := ac.assessmentService.GetUserAssessment(req)
-	if err != nil {
-		models.ErrorResponse(ctx, "Failed to fetch assessment", http.StatusInternalServerError, err.Error(), nil, err)
-		return
-	}
+    _, tokenUserId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+    if err != nil {
+        models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
+        return
+    }
 
-	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Loaded assessment", resp, nil, nil)
-	return
+    // Public OTP flow sends real student user_id in body
+    // Candidate/Kids flow: body has no user_id, use token's user ID
+    if req.UserId == "" {
+        req.UserId = tokenUserId
+    }
+
+    resp, err := ac.assessmentService.GetUserAssessment(req)
+    if err != nil {
+        models.ErrorResponse(ctx, "Failed to fetch assessment", http.StatusInternalServerError, err.Error(), nil, err)
+        return
+    }
+
+    models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Loaded assessment", resp, nil, nil)
 }
 
 func (ac *AssessmentController) GetUserAssessments(ctx *gin.Context) {
@@ -117,15 +122,22 @@ func (c *AssessmentController) DownloadAssessmentReport(ctx *gin.Context) {
 }
 
 func (ac *AssessmentController) SubmitUserAssessment(ctx *gin.Context) {
-	_, userId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+	_, tokenUserId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
 	if err != nil {
 		models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
 		return
 	}
+
 	var req models.SubmitUserAssessmentRequest
 	if err := ctx.ShouldBindJSON(&req); err != nil {
 		models.ErrorResponse(ctx, "Invalid input", http.StatusBadRequest, err.Error(), nil, err)
 		return
+	}
+
+	
+	userId := req.UserId
+	if userId == "" {
+		userId = tokenUserId
 	}
 
 	err = ac.assessmentService.SubmitAssessment(userId, req)
@@ -135,7 +147,6 @@ func (ac *AssessmentController) SubmitUserAssessment(ctx *gin.Context) {
 	}
 
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "assessment submitted", nil, nil, nil)
-	return
 }
 
 func (ac *AssessmentController) SubmitUserAssessmentTypingResult(ctx *gin.Context) {
@@ -376,10 +387,26 @@ func (ac *AssessmentController) UploadPhoto(ctx *gin.Context) {
 
 	assessmentSeq := ctx.PostForm("assessment_sequence")
 	sessionID := ctx.PostForm("session_id")
+	userID := ""
 
-	_, userID, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
-	if err != nil {
-		models.ErrorResponse(ctx, "failure", 401, "Unauthorized", nil, err)
+	if assessmentSeq == "" || sessionID == "" {
+		models.ErrorResponse(ctx, "failure", 400, "Missing assessment_sequence or session_id", nil, nil)
+		return
+	}
+
+	// Try to get user from token (dashboard flow)
+	_, uid, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+	if err == nil && uid != "" {
+		userID = uid
+	}
+
+	// Fallback for PUBLIC assessment flow
+	if userID == "" {
+		userID = ctx.PostForm("user_id")
+	}
+
+	if userID == "" {
+		models.ErrorResponse(ctx, "failure", 400, "User ID missing", nil, nil)
 		return
 	}
 
@@ -394,10 +421,18 @@ func (ac *AssessmentController) UploadPhoto(ctx *gin.Context) {
 		return
 	}
 
-	openedFile, _ := file.Open()
+	openedFile, err := file.Open()
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 500, "Unable to open photo", nil, err)
+		return
+	}
 	defer openedFile.Close()
 
-	photoData, _ := io.ReadAll(openedFile)
+	photoData, err := io.ReadAll(openedFile)
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 500, "Unable to read photo", nil, err)
+		return
+	}
 
 	err = ac.assessmentService.UploadPhoto(
 		assessmentSeq,
@@ -418,10 +453,26 @@ func (ac *AssessmentController) UploadVoice(ctx *gin.Context) {
 
 	assessmentSeq := ctx.PostForm("assessment_sequence")
 	sessionID := ctx.PostForm("session_id")
+	userID := ""
 
-	_, userID, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
-	if err != nil {
-		models.ErrorResponse(ctx, "failure", 401, "Unauthorized", nil, err)
+	if assessmentSeq == "" || sessionID == "" {
+		models.ErrorResponse(ctx, "failure", 400, "Missing assessment_sequence or session_id", nil, nil)
+		return
+	}
+
+	// Try token user (dashboard flow)
+	_, uid, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+	if err == nil && uid != "" {
+		userID = uid
+	}
+
+	// Fallback for public assessment flow
+	if userID == "" {
+		userID = ctx.PostForm("user_id")
+	}
+
+	if userID == "" {
+		models.ErrorResponse(ctx, "failure", 400, "User ID missing", nil, nil)
 		return
 	}
 
@@ -436,10 +487,18 @@ func (ac *AssessmentController) UploadVoice(ctx *gin.Context) {
 		return
 	}
 
-	openedFile, _ := file.Open()
+	openedFile, err := file.Open()
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 500, "Unable to open voice file", nil, err)
+		return
+	}
 	defer openedFile.Close()
 
-	voiceData, _ := io.ReadAll(openedFile)
+	voiceData, err := io.ReadAll(openedFile)
+	if err != nil {
+		models.ErrorResponse(ctx, "failure", 500, "Unable to read voice file", nil, err)
+		return
+	}
 
 	err = ac.assessmentService.UploadVoice(
 		assessmentSeq,
@@ -457,31 +516,37 @@ func (ac *AssessmentController) UploadVoice(ctx *gin.Context) {
 }
 
 func (ac *AssessmentController) StartAssessment(ctx *gin.Context) {
+    var req models.StartAssessmentRequest
+    if err := ctx.ShouldBindJSON(&req); err != nil {
+        models.ErrorResponse(ctx, "Invalid input", http.StatusBadRequest, err.Error(), nil, err)
+        return
+    }
 
-	_, userId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
-	if err != nil {
-		models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
-		return
-	}
+    _, tokenUserId, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
+    if err != nil {
+        models.ErrorResponse(ctx, constant.Failure, http.StatusUnauthorized, err.Error(), nil, err)
+        return
+    }
 
-	var req models.StartAssessmentRequest
-	if err := ctx.ShouldBindJSON(&req); err != nil {
-		models.ErrorResponse(ctx, "Invalid input", http.StatusBadRequest, err.Error(), nil, err)
-		return
-	}
+    // Public OTP flow sends real student user_id in body
+    // Candidate/Kids flow: use token's user ID
+    userId := req.UserId
+    if userId == "" {
+        userId = tokenUserId
+    }
 
-	sessionID, err := ac.assessmentService.StartAssessment(userId, req.AssessmentSequence)
-	if err != nil {
-		models.ErrorResponse(ctx, "Failed to start assessment", http.StatusInternalServerError, err.Error(), nil, err)
-		return
-	}
+    sessionID, err := ac.assessmentService.StartAssessment(userId, req.AssessmentSequence)
+    if err != nil {
+        models.ErrorResponse(ctx, "Failed to start assessment", http.StatusInternalServerError, err.Error(), nil, err)
+        return
+    }
 
-	response := models.StartAssessmentResponse{
-		SessionID:          sessionID,
-		AssessmentSequence: req.AssessmentSequence,
-	}
+    response := models.StartAssessmentResponse{
+        SessionID:          sessionID,
+        AssessmentSequence: req.AssessmentSequence,
+    }
 
-	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Assessment started", response, nil, nil)
+    models.SuccessResponse(ctx, constant.Success, http.StatusOK, "Assessment started", response, nil, nil)
 }
 
 func (ac *AssessmentController) GetUserAssessmentResult(ctx *gin.Context) {
