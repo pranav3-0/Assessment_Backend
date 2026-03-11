@@ -387,22 +387,20 @@ func (ac *AssessmentController) UploadPhoto(ctx *gin.Context) {
 
 	assessmentSeq := ctx.PostForm("assessment_sequence")
 	sessionID := ctx.PostForm("session_id")
-	userID := ""
+	reqUserID := ctx.PostForm("user_id")
 
 	if assessmentSeq == "" || sessionID == "" {
 		models.ErrorResponse(ctx, "failure", 400, "Missing assessment_sequence or session_id", nil, nil)
 		return
 	}
 
-	// Try to get user from token (dashboard flow)
-	_, uid, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
-	if err == nil && uid != "" {
-		userID = uid
-	}
+	// Get user from token (dashboard flow)
+	_, tokenUserID, _, _ := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
 
-	// Fallback for PUBLIC assessment flow
+	// Final user selection
+	userID := tokenUserID
 	if userID == "" {
-		userID = ctx.PostForm("user_id")
+		userID = reqUserID
 	}
 
 	if userID == "" {
@@ -453,22 +451,19 @@ func (ac *AssessmentController) UploadVoice(ctx *gin.Context) {
 
 	assessmentSeq := ctx.PostForm("assessment_sequence")
 	sessionID := ctx.PostForm("session_id")
-	userID := ""
+	reqUserID := ctx.PostForm("user_id")
 
 	if assessmentSeq == "" || sessionID == "" {
 		models.ErrorResponse(ctx, "failure", 400, "Missing assessment_sequence or session_id", nil, nil)
 		return
 	}
 
-	// Try token user (dashboard flow)
-	_, uid, _, err := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
-	if err == nil && uid != "" {
-		userID = uid
-	}
+	// Dashboard flow
+	_, tokenUserID, _, _ := utils.GetUserIDFromContext(ctx, ac.userService.FindUserIdBySub)
 
-	// Fallback for public assessment flow
+	userID := tokenUserID
 	if userID == "" {
-		userID = ctx.PostForm("user_id")
+		userID = reqUserID
 	}
 
 	if userID == "" {
