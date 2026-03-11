@@ -58,36 +58,36 @@ func (s *GeminiServiceImpl) GenerateAssessment(req models.GenerateAssessmentRequ
 		5: "very hard (expert level)",
 	}
 
-	difficultyDesc := difficultyMap[req.DifficultyLevel]
-	questionType := "multiple choice questions (MCQ)"
-	if req.QuestionType != "" {
-		questionType = req.QuestionType
+difficultyDesc := difficultyMap[req.DifficultyLevel]
+
+questionType := "multiple choice questions (MCQ)"
+if req.QuestionType != "" {
+	questionType = req.QuestionType
+}
+
+var topicLines []string
+
+for _, t := range req.Topics {
+	if len(t.Subtopics) > 0 {
+		topicLines = append(topicLines,
+			fmt.Sprintf("%s (subtopics: %s)", t.Topic, strings.Join(t.Subtopics, ", ")))
+	} else {
+		topicLines = append(topicLines, t.Topic)
 	}
+}
 
-	assessmentName := req.AssessmentName
-	if assessmentName == "" {
-		assessmentName = fmt.Sprintf("%s Assessment - Level %d", req.Topic, req.DifficultyLevel)
-	}
+topicText := strings.Join(topicLines, "\n")
 
-	var subtopics []string
+assessmentName := req.AssessmentName
+if assessmentName == "" {
+	assessmentName = fmt.Sprintf("Assessment - Level %d", req.DifficultyLevel)
+}
 
-	for _, tag := range req.Tags {
-		if len(tag.ChildTags) > 0 {
-			subtopics = append(subtopics, tag.ChildTags...)
-		}
-	}
-
-	subtopicText := ""
-	if len(subtopics) > 0 {
-		subtopicText = fmt.Sprintf(
-			"Focus specifically on these subtopics: %s.",
-			strings.Join(subtopics, ", "),
-		)
-	}
-
-	prompt := fmt.Sprintf(`Generate %d %s about "%s" at %s difficulty level.
+prompt := fmt.Sprintf(`Generate %d %s covering the following topics and subtopics:
 
 %s
+
+Difficulty level: %s
 
 IMPORTANT: You must respond with ONLY a valid JSON object, no additional text, explanation, or markdown formatting.
 
@@ -113,24 +113,22 @@ The JSON structure must be:
 Requirements:
 1. Each question must have exactly 4 options
 2. Only ONE option should have "is_correct": true
-3. Correct answer should have "score": 1, others "score": 0
-4. Questions must strictly relate to "%s"
-5. If subtopics are provided, questions MUST be based only on those subtopics
-6. Difficulty should be %s
-7. Add relevant tags to each question
-8. Make questions clear and unambiguous
-9. Ensure all questions are unique and diverse
+3. Correct answer should have "score": 1
+4. Questions must strictly relate to the provided topics and subtopics
+5. Difficulty should be %s
+6. Add relevant tags to each question
+7. Make questions clear and unambiguous
+8. Ensure all questions are unique and diverse
 
 Generate the JSON now:`,
-		req.NumberOfQuestions,
-		questionType,
-		req.Topic,
-		difficultyDesc,
-		subtopicText,
-		assessmentName,
-		req.Topic,
-		difficultyDesc,
-	)
+
+	req.NumberOfQuestions,
+	questionType,
+	topicText,
+	difficultyDesc,
+	assessmentName,
+	difficultyDesc,
+)
 
 	// Call Gemini API
 	geminiReq := GeminiRequest{
@@ -226,11 +224,6 @@ Generate the JSON now:`,
 		}
 	}
 
-	// Add user-provided tags to assessment if specified
-	if len(req.Tags) > 0 {
-		assessment.Tags = append(assessment.Tags, req.Tags...)
-	}
-
 	// Validate the assessment
 	if len(assessment.Questions) == 0 {
 		return nil, errors.New("no questions were generated")
@@ -255,8 +248,7 @@ Generate the JSON now:`,
 	return &assessment, nil
 }
 
-// convertStringTagsToTagRequests converts a simple string array of tags to TagRequest format
-// Each tag becomes a separate TagRequest with only child_tags (no parent)
+
 func convertStringTagsToTagRequests(tags []string) []models.TagRequest {
 	if len(tags) == 0 {
 		return nil

@@ -268,13 +268,17 @@ type ManualAssessmentRequest struct {
 	Tags                 []TagRequest              `json:"tags,omitempty"`
 }
 
+type TopicRequest struct {
+	Topic     string   `json:"topic"`
+	Subtopics []string `json:"subtopics,omitempty"`
+}
+
 type GenerateAssessmentRequest struct {
-	Topic             string       `json:"topic" binding:"required"`
-	NumberOfQuestions int          `json:"number_of_questions" binding:"required,min=1,max=50"`
-	DifficultyLevel   int          `json:"difficulty_level" binding:"required,min=1,max=5"`
-	QuestionType      string       `json:"question_type"`
-	Tags              []TagRequest `json:"tags,omitempty"`
-	AssessmentName    string       `json:"assessment_name"`
+	Topics            []TopicRequest `json:"topics" binding:"required"`
+	NumberOfQuestions int            `json:"number_of_questions" binding:"required,min=1,max=50"`
+	DifficultyLevel   int            `json:"difficulty_level" binding:"required,min=1,max=5"`
+	QuestionType      string         `json:"question_type"`
+	AssessmentName    string         `json:"assessment_name"`
 }
 
 type GenerateAssessmentResponse struct {
