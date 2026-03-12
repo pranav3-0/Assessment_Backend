@@ -267,5 +267,6 @@ func getOpenRoutes(publicController *controller.PublicController, adminControlle
 		Route{"Admin", http.MethodPost, constant.MigrateNotify, adminController.CreateUsersOnNotify},
 		Route{"Public", http.MethodPost, constant.SendOTP, publicController.SendOTP},
 		Route{"Public", http.MethodPost, constant.VerifyOTP, publicController.VerifyOTP},
+		Route{"Public", http.MethodPost, "/public-token", publicController.GetPublicToken}, // ← ADD THIS
 	}
 }

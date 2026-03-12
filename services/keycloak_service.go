@@ -188,20 +188,13 @@ func (k *KeycloakService) MigrateRoles(roles []string) {
 	}
 }
 
-// cachedPublicToken holds the shared Keycloak token for the public assessment flow
-// so we don't call Keycloak on every student OTP verification
 var (
-	cachedPublicToken     string
-	cachedPublicTokenExp  int64 // unix timestamp when token expires
+	cachedPublicToken    string
+	cachedPublicTokenExp int64
 )
 
-// GetPublicAssessmentToken returns a cached Keycloak token for the public assessment
-// service account. Refreshes automatically 60 seconds before expiry.
-// Safe for concurrent use — worst case two goroutines refresh at the same time,
-// which is fine since both get valid tokens.
 func GetPublicAssessmentToken() (string, error) {
-	// Return cached token if still valid (with 60s buffer before expiry)
-	if cachedPublicToken != "" && time.Now().Unix() < cachedPublicTokenExp-60 {
+	if cachedPublicToken != "" && time.Now().Unix() < cachedPublicTokenExp-300 {
 		return cachedPublicToken, nil
 	}
 
@@ -220,11 +213,16 @@ func GetPublicAssessmentToken() (string, error) {
 		return "", fmt.Errorf("failed to get public assessment token: %w", err)
 	}
 
-	// Cache the token with its expiry time
 	cachedPublicToken = jwt.AccessToken
 	cachedPublicTokenExp = time.Now().Unix() + int64(jwt.ExpiresIn)
 
-	log.Printf("[PUBLIC TOKEN] Refreshed Keycloak public assessment token, expires in %d seconds", jwt.ExpiresIn)
+	log.Printf("[PUBLIC TOKEN] Refreshed, expires in %d seconds", jwt.ExpiresIn)
 
 	return cachedPublicToken, nil
+}
+
+func GetFreshPublicAssessmentToken() (string, error) {
+	cachedPublicToken = ""
+	cachedPublicTokenExp = 0
+	return GetPublicAssessmentToken()
 }

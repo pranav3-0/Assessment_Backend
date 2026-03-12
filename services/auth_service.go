@@ -118,7 +118,6 @@ func (s *AuthServiceImpl) LoginUser(ctx context.Context, req models.LoginRequest
 		response.RefreshToken = accessToken.RefreshToken
 
 	case "jwt":
-		// JWT Login
 
 	default:
 		return nil, errors.New("unsupported authentication type")
@@ -172,8 +171,7 @@ func (s *AuthServiceImpl) VerifyOTP(email string, otp string) (string, string, e
 		}
 	}
 
-	
-	token, err := GetPublicAssessmentToken()
+	token, err := GetFreshPublicAssessmentToken()
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get keycloak token: %w", err)
 	}

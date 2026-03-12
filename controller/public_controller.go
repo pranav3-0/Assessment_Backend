@@ -89,3 +89,12 @@ func (pc *PublicController) VerifyOTP(ctx *gin.Context) {
 
 	models.SuccessResponse(ctx, constant.Success, http.StatusOK, "OTP verified", res, nil, nil)
 }
+
+func (pc *PublicController) GetPublicToken(ctx *gin.Context) {
+    token, err := services.GetPublicAssessmentToken()
+    if err != nil {
+        models.ErrorResponse(ctx, "failure", 500, "Failed to get public token", nil, err)
+        return
+    }
+    models.SuccessResponse(ctx, "success", 200, "Token fetched", gin.H{"token": token}, nil, nil)
+}
